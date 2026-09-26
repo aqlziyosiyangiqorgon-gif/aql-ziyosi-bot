@@ -19,7 +19,7 @@ from gatebot.keyboards.inline import (
     stats_kb,
 )
 from gatebot.services.backup import perform_backup
-from gatebot.utils.html import escape_html
+from gatebot.utils.html import escape_html, safe_edit_text
 
 router = Router(name="admin_menu")
 
@@ -60,7 +60,7 @@ async def handle_navigation(
             admins_count=len(admins),
         )
         if callback.message:
-            await callback.message.edit_text("⚙️ <b>Administrator paneli</b>\n\nKerakli bo'limni tanlang:", reply_markup=kb)
+            await safe_edit_text(callback.message, "⚙️ <b>Administrator paneli</b>\n\nKerakli bo'limni tanlang:", reply_markup=kb)
 
     elif target == "stats":
         stats = await get_join_stats(session)
@@ -90,7 +90,7 @@ async def handle_navigation(
             f"<b>Eng ko'p yetishmagan kanallar:</b>\n{missing_section}"
         )
         if callback.message:
-            await callback.message.edit_text(text, reply_markup=stats_kb())
+            await safe_edit_text(callback.message, text, reply_markup=stats_kb())
 
     elif target == "backup":
         text = (
@@ -99,11 +99,11 @@ async def handle_navigation(
             "Zaxira nusxa olishni hoziroq ishga tushirishingiz mumkin:"
         )
         if callback.message:
-            await callback.message.edit_text(text, reply_markup=backup_kb())
+            await safe_edit_text(callback.message, text, reply_markup=backup_kb())
 
     elif target == "backup_now":
         if callback.message:
-            await callback.message.edit_text("⏳ Zaxira nusxa olinmoqda, iltimos kuting...")
+            await safe_edit_text(callback.message, "⏳ Zaxira nusxa olinmoqda, iltimos kuting...")
         success = await perform_backup(bot, settings)
         status_msg = (
             "✅ <b>Zaxira nusxa muvaffaqiyatli olindi va yuborildi!</b>"
@@ -111,6 +111,6 @@ async def handle_navigation(
             else "❌ <b>Zaxira nusxa olishda xatolik yuz berdi.</b>"
         )
         if callback.message:
-            await callback.message.edit_text(status_msg, reply_markup=backup_kb())
+            await safe_edit_text(callback.message, status_msg, reply_markup=backup_kb())
 
     await callback.answer()

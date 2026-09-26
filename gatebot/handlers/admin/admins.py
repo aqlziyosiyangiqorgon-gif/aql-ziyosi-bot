@@ -1,5 +1,5 @@
-"""Admin managers list and assignment."""
 
+"""Admin managers list and assignment."""
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -15,6 +15,7 @@ from gatebot.keyboards.inline import (
     admins_list_kb,
 )
 from gatebot.texts import ADMIN_ADDED, ADMIN_REMOVED
+from gatebot.utils.html import safe_edit_text
 
 router = Router(name="admin_admins")
 
@@ -33,7 +34,7 @@ async def nav_admins(
         "Yangi admin qo'shish yoki mavjudlarini ko'rish:"
     )
     if callback.message:
-        await callback.message.edit_text(
+        await safe_edit_text(callback.message,
             text, reply_markup=admins_list_kb(admins, settings.ADMIN_IDS)
         )
     await callback.answer()
@@ -43,7 +44,7 @@ async def nav_admins(
 async def start_add_admin(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AdminStates.waiting_for_admin_id)
     if callback.message:
-        await callback.message.edit_text(
+        await safe_edit_text(callback.message,
             "👤 Yangi administratorning Telegram User ID raqamini kiriting:"
         )
     await callback.answer()
@@ -73,7 +74,7 @@ async def view_admin(
     super_badge = " ⭐ (Super Admin)" if is_super else ""
     text = f"👤 Administrator ID: <code>{admin_id}</code>{super_badge}"
     if callback.message:
-        await callback.message.edit_text(text, reply_markup=admin_detail_kb(admin_id, is_super))
+        await safe_edit_text(callback.message, text, reply_markup=admin_detail_kb(admin_id, is_super))
     await callback.answer()
 
 
@@ -89,4 +90,4 @@ async def delete_admin_handler(
     await remove_admin(session, admin_id)
     await callback.answer("Admin o'chirildi")
     if callback.message:
-        await callback.message.edit_text(ADMIN_REMOVED.format(tg_id=admin_id))
+        await safe_edit_text(callback.message, ADMIN_REMOVED.format(tg_id=admin_id))

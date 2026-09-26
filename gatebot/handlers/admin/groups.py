@@ -23,7 +23,7 @@ from gatebot.keyboards.inline import (
     group_detail_kb,
     groups_list_kb,
 )
-from gatebot.utils.html import escape_html
+from gatebot.utils.html import escape_html, safe_edit_text
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ async def nav_groups(callback: CallbackQuery, session: AsyncSession) -> None:
         "Guruh holatini o'zgartirish, huquqlarni tekshirish yoki yangi qo'shish uchun tanlang:"
     )
     if callback.message:
-        await callback.message.edit_text(text, reply_markup=groups_list_kb(groups))
+        await safe_edit_text(callback.message, text, reply_markup=groups_list_kb(groups))
     await callback.answer()
 
 
@@ -62,7 +62,7 @@ async def view_group(callback: CallbackQuery, callback_data: GroupCb, session: A
         f"• Qo'shilgan: {group.added_at.strftime('%Y-%m-%d %H:%M')}"
     )
     if callback.message:
-        await callback.message.edit_text(text, reply_markup=group_detail_kb(group))
+        await safe_edit_text(callback.message, text, reply_markup=group_detail_kb(group))
     await callback.answer()
 
 
@@ -133,7 +133,7 @@ async def start_manual_add_group(callback: CallbackQuery, state: FSMContext) -> 
         "<i>Eslatma: Bot avval o'sha guruhga admin qilib qo'shilgan bo'lishi kerak.</i>"
     )
     if callback.message:
-        await callback.message.edit_text(text)
+        await safe_edit_text(callback.message, text)
     await callback.answer()
 
 

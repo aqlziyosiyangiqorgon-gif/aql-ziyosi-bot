@@ -10,7 +10,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import ErrorEvent
+from aiogram.types import BotCommand, ErrorEvent
 
 from gatebot.config import Settings, load_settings
 from gatebot.db.migrations import run_upgrade_head
@@ -113,13 +113,7 @@ async def start_bot(settings: Settings, bot: Bot, dp: Dispatcher) -> None:
     logger.info("Initializing AQL ZIYOSI Join Request Gatekeeper Bot...")
     setup_directories()
 
-    # 1. Run migrations
-    logger.info("Running database migrations...")
-    try:
-        run_upgrade_head()
-    except Exception as e:
-        logger.exception("Database migration failed: %s", e)
-        raise
+    # 1. Migrations are executed at application startup
 
     # 2. Init DB engine
     init_engine(settings.DATABASE_URL)
@@ -136,6 +130,16 @@ async def start_bot(settings: Settings, bot: Bot, dp: Dispatcher) -> None:
     except Exception as e:
         logger.error("Failed to verify bot token with Telegram: %s", e)
         raise
+
+    # Register bot menu commands in Telegram
+    try:
+        await bot.set_my_commands([
+            BotCommand(command="start", description="Botni ishga tushirish"),
+            BotCommand(command="admin", description="Administrator paneli"),
+        ])
+        logger.info("Bot commands registered with Telegram API.")
+    except Exception as e:
+        logger.warning("Failed to set bot commands: %s", e)
 
     # 4. Global error handler
     register_global_error_handler(dp, bot, settings.ADMIN_IDS)
@@ -180,4 +184,9 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    setup_directories()
+    try:
+        run_upgrade_head()
+    except Exception as e:
+        logger.exception("Startup migration failed: %s", e)
     asyncio.run(main())

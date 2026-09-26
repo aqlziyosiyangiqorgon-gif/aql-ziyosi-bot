@@ -26,7 +26,7 @@ from gatebot.keyboards.inline import (
     channels_list_kb,
 )
 from gatebot.texts import ASK_CHANNEL_URL, CHANNEL_URL_SAVED
-from gatebot.utils.html import escape_html
+from gatebot.utils.html import escape_html, safe_edit_text
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ async def nav_channels(callback: CallbackQuery, session: AsyncSession) -> None:
         "Kanalni sozlash, tartibini o'zgartirish yoki yangi kanal qo'shish uchun tanlang:"
     )
     if callback.message:
-        await callback.message.edit_text(text, reply_markup=channels_list_kb(channels))
+        await safe_edit_text(callback.message, text, reply_markup=channels_list_kb(channels))
     await callback.answer()
 
 
@@ -69,7 +69,7 @@ async def view_channel(callback: CallbackQuery, callback_data: ChannelCb, sessio
         f"• Qo'shilgan: {channel.added_at.strftime('%Y-%m-%d %H:%M')}"
     )
     if callback.message:
-        await callback.message.edit_text(text, reply_markup=channel_detail_kb(channel))
+        await safe_edit_text(callback.message, text, reply_markup=channel_detail_kb(channel))
     await callback.answer()
 
 
@@ -113,7 +113,7 @@ async def edit_channel_url(callback: CallbackQuery, callback_data: ChannelCb, st
     await state.update_data(channel_chat_id=channel.chat_id, channel_title=channel.title)
     await state.set_state(ChannelStates.waiting_for_url)
     if callback.message:
-        await callback.message.edit_text(ASK_CHANNEL_URL.format(title=escape_html(channel.title)))
+        await safe_edit_text(callback.message, ASK_CHANNEL_URL.format(title=escape_html(channel.title)))
     await callback.answer()
 
 
@@ -152,7 +152,7 @@ async def start_manual_add_channel(callback: CallbackQuery, state: FSMContext) -
         "<i>Eslatma: Bot avval o'sha kanalga admin qilib qo'shilgan bo'lishi kerak.</i>"
     )
     if callback.message:
-        await callback.message.edit_text(text)
+        await safe_edit_text(callback.message, text)
     await callback.answer()
 
 
