@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  gatebot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: aql_gatebot
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    volumes:
+      - ../data:/app/data
+      - ../logs:/app/logs
