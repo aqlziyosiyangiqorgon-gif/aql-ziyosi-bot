@@ -8,7 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatebot.config import Settings
 from gatebot.db.crud import add_admin, get_all_admins, remove_admin
-from gatebot.keyboards.inline import admin_detail_kb, admins_list_kb
+from gatebot.keyboards.inline import (
+    AdminCb,
+    NavCb,
+    admin_detail_kb,
+    admins_list_kb,
+)
 from gatebot.texts import ADMIN_ADDED, ADMIN_REMOVED
 
 router = Router(name="admin_admins")
@@ -18,7 +23,7 @@ class AdminStates(StatesGroup):
     waiting_for_admin_id = State()
 
 
-@router.callback_query(F.data == "admin_nav:admins")
+@router.callback_query(NavCb.filter(F.target == "admins"))
 async def nav_admins(
     callback: CallbackQuery, session: AsyncSession, settings: Settings
 ) -> None:
@@ -34,7 +39,7 @@ async def nav_admins(
     await callback.answer()
 
 
-@router.callback_query(F.data == "adm_add")
+@router.callback_query(AdminCb.filter(F.action == "add"))
 async def start_add_admin(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(AdminStates.waiting_for_admin_id)
     if callback.message:
@@ -59,11 +64,11 @@ async def process_add_admin(
     await message.answer(ADMIN_ADDED.format(tg_id=tg_id))
 
 
-@router.callback_query(F.data.startswith("adm_view:"))
+@router.callback_query(AdminCb.filter(F.action == "view"))
 async def view_admin(
-    callback: CallbackQuery, settings: Settings
+    callback: CallbackQuery, callback_data: AdminCb, settings: Settings
 ) -> None:
-    admin_id = int(callback.data.split(":")[1])
+    admin_id = callback_data.admin_id
     is_super = admin_id in settings.ADMIN_IDS
     super_badge = " ⭐ (Super Admin)" if is_super else ""
     text = f"👤 Administrator ID: <code>{admin_id}</code>{super_badge}"
@@ -72,11 +77,11 @@ async def view_admin(
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("adm_del:"))
+@router.callback_query(AdminCb.filter(F.action == "del"))
 async def delete_admin_handler(
-    callback: CallbackQuery, session: AsyncSession, settings: Settings
+    callback: CallbackQuery, callback_data: AdminCb, session: AsyncSession, settings: Settings
 ) -> None:
-    admin_id = int(callback.data.split(":")[1])
+    admin_id = callback_data.admin_id
     if admin_id in settings.ADMIN_IDS:
         await callback.answer("Super adminni o'chirib bo'lmaydi!", show_alert=True)
         return

@@ -19,6 +19,10 @@ class Settings(BaseSettings):
         default="sqlite+aiosqlite:///./data/bot.db",
         description="Async SQLAlchemy database URL",
     )
+    BACKUP_CHAT_ID: int | None = Field(
+        default=None,
+        description="Target Telegram chat/channel ID for database backups",
+    )
     SUB_CACHE_SECONDS: int = Field(default=60, description="Subscription positive cache TTL")
     TIMEZONE: str = Field(default="Asia/Tashkent", description="Timezone name")
     LOG_LEVEL: str = Field(default="INFO", description="Logging level")
@@ -34,6 +38,15 @@ class Settings(BaseSettings):
         if isinstance(v, int):
             return [v]
         return []
+
+    @property
+    def effective_backup_chat_id(self) -> int | None:
+        """Return designated backup chat ID or fallback to the first super admin."""
+        if self.BACKUP_CHAT_ID:
+            return self.BACKUP_CHAT_ID
+        if self.ADMIN_IDS:
+            return self.ADMIN_IDS[0]
+        return None
 
     @property
     def masked_token(self) -> str:

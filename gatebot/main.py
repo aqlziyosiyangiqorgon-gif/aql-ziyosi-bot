@@ -19,6 +19,7 @@ from gatebot.handlers import chat_events, join_requests, start
 from gatebot.handlers.admin import admin_router
 from gatebot.middlewares.db_session import DbSessionMiddleware
 from gatebot.services.notify import notify_system_error
+from gatebot.services.scheduler import setup_scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +109,7 @@ def register_global_error_handler(
 
 
 async def start_bot(settings: Settings, bot: Bot, dp: Dispatcher) -> None:
-    """Initialize DB migrations, verify bot token, and start polling."""
+    """Initialize DB migrations, verify bot token, start scheduler, and start polling."""
     logger.info("Initializing AQL ZIYOSI Join Request Gatekeeper Bot...")
     setup_directories()
 
@@ -139,13 +140,22 @@ async def start_bot(settings: Settings, bot: Bot, dp: Dispatcher) -> None:
     # 4. Global error handler
     register_global_error_handler(dp, bot, settings.ADMIN_IDS)
 
-    # 5. Polling with explicitly resolved update types
-    used_updates = dp.resolve_used_update_types()
-    critical_updates = {"message", "callback_query", "chat_join_request", "my_chat_member"}
-    allowed_updates = list(set(used_updates).union(critical_updates))
+    # 5. Start background jobs scheduler
+    scheduler = setup_scheduler(bot, settings)
+    scheduler.start()
+    logger.info("Scheduler started with timezone %s", settings.TIMEZONE)
 
-    logger.info("Starting polling with allowed_updates=%s", allowed_updates)
-    await dp.start_polling(bot, allowed_updates=allowed_updates)
+    try:
+        # 6. Polling with explicitly resolved update types
+        used_updates = dp.resolve_used_update_types()
+        critical_updates = {"message", "callback_query", "chat_join_request", "my_chat_member"}
+        allowed_updates = list(set(used_updates).union(critical_updates))
+
+        logger.info("Starting polling with allowed_updates=%s", allowed_updates)
+        await dp.start_polling(bot, allowed_updates=allowed_updates)
+    finally:
+        logger.info("Stopping scheduler...")
+        scheduler.shutdown(wait=False)
 
 
 async def main() -> None:

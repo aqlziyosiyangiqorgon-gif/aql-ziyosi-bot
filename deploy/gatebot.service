@@ -1,5 +1,5 @@
 [Unit]
-Description=AQL ZIYOSI Gatekeeper Telegram Bot
+Description=AQL ZIYOSI Join Request Gatekeeper Bot
 After=network.target
 
 [Service]
