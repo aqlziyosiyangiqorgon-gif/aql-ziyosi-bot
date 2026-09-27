@@ -1,6 +1,6 @@
 """Admin dashboard overview, statistics, and backup."""
 
-from aiogram import Bot, Router
+from aiogram import Bot, F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,7 +39,7 @@ async def cmd_admin(message: Message, session: AsyncSession) -> None:
     await message.answer("⚙️ <b>Administrator paneli</b>\n\nKerakli bo'limni tanlang:", reply_markup=kb)
 
 
-@router.callback_query(NavCb.filter())
+@router.callback_query(NavCb.filter(F.target.in_(["main", "stats", "stats_export", "backup", "backup_now"])))
 async def handle_navigation(
     callback: CallbackQuery,
     callback_data: NavCb,
@@ -64,14 +64,17 @@ async def handle_navigation(
 
     elif target == "stats":
         stats = await get_join_stats(session)
-        group_lines = []
-        for g in stats["groups"]:
+
+        # Top active groups ranking
+        top_groups = stats.get("top_groups", [])
+        top_lines = []
+        for rank, g in enumerate(top_groups[:5], start=1):
             status_dot = "🟢" if g["is_active"] else "🔴"
-            group_lines.append(
-                f"• {status_dot} <b>{escape_html(g['title'])}</b>: "
-                f"✅ {g['approved']} ta | ❌ {g['declined']} ta"
+            top_lines.append(
+                f"{rank}. {status_dot} <b>{escape_html(g['title'])}</b>: "
+                f"<b>{g['total']}</b> ta so'rov (✅ {g['approved']} | ❌ {g['declined']})"
             )
-        group_section = "\n".join(group_lines) if group_lines else "<i>Guruhlar mavjud emas</i>"
+        top_section = "\n".join(top_lines) if top_lines else "<i>Guruhlar mavjud emas</i>"
 
         missing_lines = []
         for ch_title, count in stats["top_missing"]:
@@ -86,11 +89,29 @@ async def handle_navigation(
             f"<b>Oxirgi 7 kun:</b>\n"
             f"✅ Tasdiqlangan: <b>{stats['approved_7d']}</b>\n"
             f"❌ Rad etilgan: <b>{stats['declined_7d']}</b>\n\n"
-            f"<b>Guruhlar kesimida:</b>\n{group_section}\n\n"
-            f"<b>Eng ko'p yetishmagan kanallar:</b>\n{missing_section}"
+            f"<b>🏆 Eng faol guruhlar (Top-5):</b>\n{top_section}\n\n"
+            f"<b>Eng ko'p yetishmagan kanallar:</b>\n{missing_section}\n\n"
+            "<i>Batafsil kunlik va guruhlar kesimidagi to'liq hisobotni Excel formatida yuklab olishingiz mumkin:</i>"
         )
         if callback.message:
             await safe_edit_text(callback.message, text, reply_markup=stats_kb())
+
+    elif target == "stats_export":
+        from datetime import datetime
+        from aiogram.types import BufferedInputFile
+        from gatebot.services.reports import generate_excel_report
+
+        await callback.answer("⏳ Excel hisobot tayyorlanmoqda...")
+        report_bytes = await generate_excel_report(session)
+        now_str = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        doc = BufferedInputFile(report_bytes, filename=f"GateBot_Hisobot_{now_str}.xlsx")
+        caption = (
+            "📊 <b>AQL ZIYOSI — To'liq statistik hisobot (.xlsx)</b>\n\n"
+            f"• Tayyorlangan vaqt: <code>{now_str}</code>\n"
+            "• Ichida: Guruhlar reytingi, Kunlik dinamika, Yetishmagan kanallar tahlili."
+        )
+        if callback.message:
+            await callback.message.answer_document(document=doc, caption=caption)
 
     elif target == "backup":
         text = (

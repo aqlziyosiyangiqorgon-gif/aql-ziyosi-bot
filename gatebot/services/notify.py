@@ -6,6 +6,8 @@ import time
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
 
+from gatebot.utils.html import escape_html
+
 logger = logging.getLogger(__name__)
 
 # In-memory cooldown cache: key -> monotonic timestamp
@@ -14,6 +16,8 @@ RATE_LIMIT_SECONDS = 1800  # 30 minutes
 
 
 def _is_rate_limited(key: str, cooldown: float = RATE_LIMIT_SECONDS) -> bool:
+    if len(_alert_history) > 100:
+        _cleanup_expired_alerts()
     now = time.monotonic()
     last_time = _alert_history.get(key)
     if last_time and (now - last_time < cooldown):
@@ -25,6 +29,14 @@ def _is_rate_limited(key: str, cooldown: float = RATE_LIMIT_SECONDS) -> bool:
 def clear_alert_history() -> None:
     """Clear alert history (primarily for tests)."""
     _alert_history.clear()
+
+
+def _cleanup_expired_alerts() -> None:
+    """Remove expired entries from alert history."""
+    now = time.monotonic()
+    expired = [k for k, v in _alert_history.items() if (now - v) > RATE_LIMIT_SECONDS]
+    for k in expired:
+        del _alert_history[k]
 
 
 async def notify_admins(
@@ -55,7 +67,7 @@ async def notify_channel_access_lost(
         return False
 
     text = (
-        f"⚠️ <b>Ogohlantirish!</b> Bot «{channel_title}» (ID: <code>{channel_chat_id}</code>) "
+        f"⚠️ <b>Ogohlantirish!</b> Bot «{escape_html(channel_title)}» (ID: <code>{channel_chat_id}</code>) "
         f"kanaliga kirish huquqini yo'qotdi. Foydalanuvchilar a'zoligini tekshirish to'xtab qolmasligi "
         f"uchun bot adminlik huquqlarini tekshiring!"
     )
@@ -72,7 +84,7 @@ async def notify_bot_removed(
 ) -> None:
     """Notify admins when bot is kicked or demoted from group or channel."""
     text = (
-        f"ℹ️ Bot «{chat_title}» (ID: <code>{chat_id}</code>) {chat_type}idan chiqarildi "
+        f"ℹ️ Bot «{escape_html(chat_title)}» (ID: <code>{chat_id}</code>) {chat_type}idan chiqarildi "
         f"yoki adminlikdan olindi. Ushbu ob'ekt nofaol (is_active=False) holatiga o'tkazildi."
     )
     await notify_admins(bot, admin_ids, text)
@@ -87,7 +99,7 @@ async def notify_non_admin_add(
 ) -> None:
     """Notify admins when non-admin tries to add bot to a group."""
     text = (
-        f"⚠️ Noma'lum foydalanuvchi (ID: <code>{user_id}</code>) botni «{chat_title}» "
+        f"⚠️ Noma'lum foydalanuvchi (ID: <code>{user_id}</code>) botni «{escape_html(chat_title)}» "
         f"(ID: <code>{chat_id}</code>) guruhiga qo'shishga urindi. Bot guruhdan chiqib ketdi."
     )
     await notify_admins(bot, admin_ids, text)
@@ -102,5 +114,5 @@ async def notify_system_error(
     key = f"system_error:{error_text[:40]}"
     if _is_rate_limited(key, cooldown=300):
         return
-    text = f"🔥 <b>Tizimda xatolik yuz berdi:</b>\n<pre>{error_text[:3000]}</pre>"
+    text = f"🔥 <b>Tizimda xatolik yuz berdi:</b>\n<pre>{escape_html(error_text[:3000])}</pre>"
     await notify_admins(bot, admin_ids, text)

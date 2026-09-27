@@ -31,6 +31,14 @@ def clear_cache() -> None:
     _positive_cache.clear()
 
 
+def _cleanup_expired_cache() -> None:
+    """Remove expired entries from positive cache."""
+    now = time.monotonic()
+    expired = [k for k, v in _positive_cache.items() if v <= now]
+    for k in expired:
+        del _positive_cache[k]
+
+
 async def check_user(
     bot: Bot,
     user_id: int,
@@ -55,6 +63,9 @@ async def check_user(
 
     missing: list[RequiredChannel] = []
     now = time.monotonic()
+
+    if len(_positive_cache) > 10_000:
+        _cleanup_expired_cache()
 
     for channel in channels:
         cache_key = (user_id, channel.chat_id)

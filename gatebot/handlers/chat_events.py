@@ -183,12 +183,39 @@ async def on_group_migration(
     await update_protected_group_chat_id(session, old_chat_id=old_id, new_chat_id=new_id)
 
 
+# 4. Auto-delete service messages (new members joined, left) in protected groups
+@router.message(F.new_chat_members | F.left_chat_member)
+async def on_service_join_leave_message(
+    message: Message,
+    session: AsyncSession,
+) -> None:
+    """Auto-delete 'user joined/left group' service messages in managed groups."""
+    group = await get_protected_group_by_chat_id(session, message.chat.id)
+    if not group or not group.is_active:
+        return
+
+    try:
+        await message.delete()
+        logger.debug("Deleted join/leave service message in group %d", message.chat.id)
+    except Exception as e:
+        logger.debug("Could not delete service message in group %d: %s", message.chat.id, e)
+
+
 # 4. Confirmation callbacks from DM prompts
 @router.callback_query(F.data.startswith("group_add:"))
 async def on_group_confirm(
-    callback: CallbackQuery, bot: Bot, session: AsyncSession
+    callback: CallbackQuery, bot: Bot, session: AsyncSession, settings: Settings
 ) -> None:
-    chat_id = int(callback.data.split(":")[1])
+    if not callback.from_user or not await is_admin(session, callback.from_user.id, settings.ADMIN_IDS):
+        await callback.answer("⛔️ Ruxsat yo'q", show_alert=True)
+        return
+
+    try:
+        chat_id = int((callback.data or "").split(":")[1])
+    except (IndexError, ValueError):
+        await callback.answer("⚠️ Yaroqsiz so'rov.", show_alert=True)
+        return
+
     try:
         tg_chat = await bot.get_chat(chat_id)
         title = tg_chat.title or "Noma'lum guruh"
@@ -196,30 +223,50 @@ async def on_group_confirm(
         title = "Guruh"
 
     await add_or_update_protected_group(session, chat_id=chat_id, title=title)
-    await callback.message.edit_text(GROUP_SAVED.format(title=escape_html(title)))
+    if callback.message:
+        await callback.message.edit_text(GROUP_SAVED.format(title=escape_html(title)))
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("group_reject:"))
 async def on_group_reject(
-    callback: CallbackQuery, bot: Bot
+    callback: CallbackQuery, bot: Bot, session: AsyncSession, settings: Settings
 ) -> None:
-    chat_id = int(callback.data.split(":")[1])
+    if not callback.from_user or not await is_admin(session, callback.from_user.id, settings.ADMIN_IDS):
+        await callback.answer("⛔️ Ruxsat yo'q", show_alert=True)
+        return
+
+    try:
+        chat_id = int((callback.data or "").split(":")[1])
+    except (IndexError, ValueError):
+        await callback.answer("⚠️ Yaroqsiz so'rov.", show_alert=True)
+        return
+
     try:
         tg_chat = await bot.get_chat(chat_id)
         title = tg_chat.title or "Guruh"
     except Exception:
         title = "Guruh"
 
-    await callback.message.edit_text(GROUP_IGNORED.format(title=escape_html(title)))
+    if callback.message:
+        await callback.message.edit_text(GROUP_IGNORED.format(title=escape_html(title)))
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("chan_add:"))
 async def on_channel_confirm(
-    callback: CallbackQuery, bot: Bot, session: AsyncSession
+    callback: CallbackQuery, bot: Bot, session: AsyncSession, settings: Settings
 ) -> None:
-    chat_id = int(callback.data.split(":")[1])
+    if not callback.from_user or not await is_admin(session, callback.from_user.id, settings.ADMIN_IDS):
+        await callback.answer("⛔️ Ruxsat yo'q", show_alert=True)
+        return
+
+    try:
+        chat_id = int((callback.data or "").split(":")[1])
+    except (IndexError, ValueError):
+        await callback.answer("⚠️ Yaroqsiz so'rov.", show_alert=True)
+        return
+
     invite_url = None
     try:
         tg_chat = await bot.get_chat(chat_id)
@@ -235,20 +282,32 @@ async def on_channel_confirm(
     msg = CHANNEL_SAVED.format(title=escape_html(title))
     if not invite_url:
         msg += "\n\n💡 <i>Eslatma: Kanal yopiq (private). Foydalanuvchilarga havola ko'rinishi uchun /admin orqali havola qo'shing.</i>"
-    await callback.message.edit_text(msg)
+    if callback.message:
+        await callback.message.edit_text(msg)
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("chan_reject:"))
 async def on_channel_reject(
-    callback: CallbackQuery, bot: Bot
+    callback: CallbackQuery, bot: Bot, session: AsyncSession, settings: Settings
 ) -> None:
-    chat_id = int(callback.data.split(":")[1])
+    if not callback.from_user or not await is_admin(session, callback.from_user.id, settings.ADMIN_IDS):
+        await callback.answer("⛔️ Ruxsat yo'q", show_alert=True)
+        return
+
+    try:
+        chat_id = int((callback.data or "").split(":")[1])
+    except (IndexError, ValueError):
+        await callback.answer("⚠️ Yaroqsiz so'rov.", show_alert=True)
+        return
+
     try:
         tg_chat = await bot.get_chat(chat_id)
         title = tg_chat.title or "Kanal"
     except Exception:
         title = "Kanal"
 
-    await callback.message.edit_text(CHANNEL_IGNORED.format(title=escape_html(title)))
+    if callback.message:
+        await callback.message.edit_text(CHANNEL_IGNORED.format(title=escape_html(title)))
     await callback.answer()
+

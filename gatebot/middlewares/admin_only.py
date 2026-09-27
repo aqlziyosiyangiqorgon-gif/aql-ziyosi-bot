@@ -32,6 +32,8 @@ class AdminOnlyMiddleware(BaseMiddleware):
         # Check private chat only
         chat = getattr(event, "chat", None)
         if chat and chat.type != ChatType.PRIVATE:
+            if hasattr(event, "answer"):
+                await event.answer("ℹ️ Bu buyruq faqat shaxsiy chatda ishlaydi.")
             return None
 
         session: AsyncSession = data.get("session")

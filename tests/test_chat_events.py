@@ -27,6 +27,7 @@ from gatebot.handlers.chat_events import (
     on_group_confirm,
     on_group_migration,
     on_group_reject,
+    on_service_join_leave_message,
 )
 from gatebot.services.notify import clear_alert_history
 
@@ -124,9 +125,11 @@ async def test_admin_adds_bot_to_group_prompts_confirmation(mock_bot, db_session
 
 
 @pytest.mark.asyncio
-async def test_group_confirmation_callbacks(mock_bot, db_session):
+async def test_group_confirmation_callbacks(mock_bot, db_session, test_settings):
     """Confirming adds to DB; rejecting ignores."""
     mock_bot.get_chat.return_value = Chat(id=-100777, type=ChatType.SUPERGROUP, title="Confirmed Group")
+
+    admin_user = User(id=test_settings.ADMIN_IDS[0], is_bot=False, first_name="Admin")
 
     # Confirm
     msg_mock = AsyncMock()
@@ -135,8 +138,9 @@ async def test_group_confirmation_callbacks(mock_bot, db_session):
     cb_confirm.data = "group_add:-100777"
     cb_confirm.message = msg_mock
     cb_confirm.answer = AsyncMock()
+    cb_confirm.from_user = admin_user
 
-    await on_group_confirm(cb_confirm, mock_bot, db_session)
+    await on_group_confirm(cb_confirm, mock_bot, db_session, test_settings)
     group = await get_protected_group_by_chat_id(db_session, -100777)
     assert group is not None
     assert group.title == "Confirmed Group"
@@ -147,14 +151,15 @@ async def test_group_confirmation_callbacks(mock_bot, db_session):
     cb_reject.data = "group_reject:-100888"
     cb_reject.message = msg_mock
     cb_reject.answer = AsyncMock()
+    cb_reject.from_user = admin_user
 
-    await on_group_reject(cb_reject, mock_bot)
+    await on_group_reject(cb_reject, mock_bot, db_session, test_settings)
     group_rej = await get_protected_group_by_chat_id(db_session, -100888)
     assert group_rej is None
 
 
 @pytest.mark.asyncio
-async def test_channel_confirmation_callback(mock_bot, db_session):
+async def test_channel_confirmation_callback(mock_bot, db_session, test_settings):
     """Confirming adds channel to DB."""
     mock_tg_channel = Chat(
         id=-100999,
@@ -165,14 +170,17 @@ async def test_channel_confirmation_callback(mock_bot, db_session):
     )
     mock_bot.get_chat.return_value = mock_tg_channel
 
+    admin_user = User(id=test_settings.ADMIN_IDS[0], is_bot=False, first_name="Admin")
+
     msg_mock = AsyncMock()
     msg_mock.edit_text = AsyncMock()
     cb = AsyncMock()
     cb.data = "chan_add:-100999"
     cb.message = msg_mock
     cb.answer = AsyncMock()
+    cb.from_user = admin_user
 
-    await on_channel_confirm(cb, mock_bot, db_session)
+    await on_channel_confirm(cb, mock_bot, db_session, test_settings)
     ch = await get_required_channel_by_chat_id(db_session, -100999)
     assert ch is not None
     assert ch.title == "Official News"
@@ -226,3 +234,25 @@ async def test_supergroup_migration(db_session):
     new_grp = await get_protected_group_by_chat_id(db_session, -100500)
     assert new_grp is not None
     assert new_grp.title == "Migrating Group"
+
+
+@pytest.mark.asyncio
+async def test_auto_delete_service_messages(db_session):
+    """Joined / left service messages are automatically deleted in protected groups."""
+    await add_or_update_protected_group(db_session, chat_id=-100111, title="Active Group")
+
+    # 1. Message in protected group -> deleted
+    msg_managed = AsyncMock(spec=Message)
+    msg_managed.chat = Chat(id=-100111, type=ChatType.SUPERGROUP)
+    msg_managed.delete = AsyncMock()
+
+    await on_service_join_leave_message(msg_managed, db_session)
+    msg_managed.delete.assert_called_once()
+
+    # 2. Message in unmanaged group -> ignored
+    msg_unmanaged = AsyncMock(spec=Message)
+    msg_unmanaged.chat = Chat(id=-100999, type=ChatType.SUPERGROUP)
+    msg_unmanaged.delete = AsyncMock()
+
+    await on_service_join_leave_message(msg_unmanaged, db_session)
+    msg_unmanaged.delete.assert_not_called()

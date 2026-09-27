@@ -78,3 +78,17 @@ class JoinEvent(Base):
     )
 
     group: Mapped["ProtectedGroup"] = relationship("ProtectedGroup", back_populates="join_events")
+
+
+class BotUser(Base):
+    """User who interacted with the bot or requested group join."""
+
+    __tablename__ = "bot_users"
+
+    tg_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_bot_blocked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )

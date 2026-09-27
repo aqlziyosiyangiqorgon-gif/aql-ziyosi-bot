@@ -83,7 +83,7 @@ async def test_managed_group_approved(mock_bot, db_session, test_settings):
 
 @pytest.mark.asyncio
 async def test_managed_group_declined(mock_bot, db_session, test_settings):
-    """User missing channels -> declined, DM sent with missing list, logged."""
+    """User missing channels -> request kept pending, DM sent with missing list & check button, logged as pending."""
     await add_or_update_protected_group(db_session, chat_id=-100111, title="VIP Group")
     await add_or_update_required_channel(
         db_session, chat_id=-100222, title="Channel One", url="https://t.me/one"
@@ -101,23 +101,74 @@ async def test_managed_group_declined(mock_bot, db_session, test_settings):
     req = make_request(chat_id=-100111, chat_title="VIP Group", user_id=888, user_name="Nodir")
     await process_chat_join_request(req, mock_bot, db_session, test_settings)
 
-    mock_bot.decline_chat_join_request.assert_called_once_with(chat_id=-100111, user_id=888)
+    # Request is kept pending in Telegram, not declined immediately
+    mock_bot.decline_chat_join_request.assert_not_called()
     mock_bot.approve_chat_join_request.assert_not_called()
 
-    # DM sent with decline text & buttons
+    # DM sent with decline text & buttons (2 channels + 1 check button)
     mock_bot.send_message.assert_called_once()
     dm_text = mock_bot.send_message.call_args[1]["text"]
     assert "Kechirasiz" in dm_text
     assert "Channel One" in dm_text
     assert "Channel Two" in dm_text
+    assert "Obuna bo'ldim" in dm_text
     reply_markup = mock_bot.send_message.call_args[1]["reply_markup"]
     assert reply_markup is not None
-    assert len(reply_markup.inline_keyboard) == 2
+    assert len(reply_markup.inline_keyboard) == 3  # 2 channel URLs + 1 CheckSub button
 
     # Log entry
     events = (await db_session.execute(select(JoinEvent))).scalars().all()
     assert len(events) == 1
-    assert events[0].status == "declined"
+    assert events[0].status == "pending"
     assert events[0].user_id == 888
     assert "Channel One" in events[0].missing_channels
     assert "Channel Two" in events[0].missing_channels
+
+
+@pytest.mark.asyncio
+async def test_check_subscription_callback_flow(mock_bot, db_session, test_settings):
+    """Test clicking 'Obuna bo'ldim' button when still missing vs when joined."""
+    from unittest.mock import AsyncMock
+    from aiogram.types import CallbackQuery
+    from gatebot.handlers.join_requests import on_check_subscription
+    from gatebot.keyboards.inline import CheckSubCb
+
+    group = await add_or_update_protected_group(db_session, chat_id=-100111, title="VIP Group")
+    await add_or_update_required_channel(
+        db_session, chat_id=-100222, title="Channel One", url="https://t.me/one"
+    )
+
+    u = User(id=999, is_bot=False, first_name="Temur")
+
+    # 1. User clicks button but still has status='left'
+    mock_bot.get_chat_member.return_value = ChatMemberLeft.model_construct(
+        status="left", user=u
+    )
+
+    cb = AsyncMock(spec=CallbackQuery)
+    cb.from_user = u
+    cb.message = AsyncMock()
+    cb.answer = AsyncMock()
+    cb_data = CheckSubCb(group_chat_id=-100111)
+
+    await on_check_subscription(cb, cb_data, mock_bot, db_session, test_settings)
+
+    mock_bot.approve_chat_join_request.assert_not_called()
+    cb.answer.assert_called_once()
+    assert "Hali barcha kanallarga a'zo bo'lmadingiz" in cb.answer.call_args[0][0]
+
+    # 2. User joins channel, status becomes 'member'
+    mock_bot.get_chat_member.return_value = ChatMemberMember.model_construct(
+        status="member", user=u
+    )
+    cb.answer.reset_mock()
+
+    await on_check_subscription(cb, cb_data, mock_bot, db_session, test_settings)
+
+    mock_bot.approve_chat_join_request.assert_called_once_with(chat_id=-100111, user_id=999)
+    assert "Tabriklaymiz" in cb.answer.call_args[0][0]
+
+    # Verify approved log entry
+    events = (await db_session.execute(select(JoinEvent).where(JoinEvent.user_id == 999))).scalars().all()
+    assert len(events) == 1
+    assert events[0].status == "approved"

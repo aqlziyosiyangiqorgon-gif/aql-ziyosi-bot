@@ -92,7 +92,8 @@ async def check_group_rights(
                 show_alert=True,
             )
     except Exception as e:
-        await callback.answer(f"⚠️ Xatolik yuz berdi: {e}", show_alert=True)
+        logger.error("Error checking group rights %d: %s", group.chat_id, e)
+        await callback.answer("⚠️ Guruh huquqlarini tekshirishda xatolik.", show_alert=True)
 
 
 @router.callback_query(GroupCb.filter(F.action == "toggle"))
@@ -182,4 +183,4 @@ async def process_manual_group_input(
 
     except Exception as e:
         logger.error("Error manually adding group %d: %s", chat_id, e)
-        await message.answer(f"❌ Guruhni tekshirishda xatolik: {e}")
+        await message.answer("❌ Guruhni tekshirishda xatolik. Qaytadan urinib ko'ring.")

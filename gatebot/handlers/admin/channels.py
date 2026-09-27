@@ -58,7 +58,7 @@ async def view_channel(callback: CallbackQuery, callback_data: ChannelCb, sessio
         return
 
     status = "🟢 Faol (tekshiriladi)" if channel.is_active else "🔴 Nofaol"
-    url_text = f"<a href='{channel.url}'>{channel.url}</a>" if channel.url else "<i>Mavjud emas</i>"
+    url_text = f"<a href='{escape_html(channel.url)}'>{escape_html(channel.url)}</a>" if channel.url else "<i>Mavjud emas</i>"
     text = (
         f"📢 <b>Kanal tafsilotlari:</b>\n\n"
         f"• Nomi: <b>{escape_html(channel.title)}</b>\n"
@@ -122,6 +122,9 @@ async def process_channel_url_input(
     message: Message, state: FSMContext, session: AsyncSession
 ) -> None:
     url = (message.text or "").strip()
+    if not (url.startswith("https://") or url.startswith("http://") or url.startswith("@")):
+        await message.answer("⚠️ Havola https:// yoki @ bilan boshlanishi kerak. Qaytadan kiriting:")
+        return
     data = await state.get_data()
     chat_id = data["channel_chat_id"]
     title = data["channel_title"]
@@ -147,9 +150,9 @@ async def delete_channel_handler(
 async def start_manual_add_channel(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(ChannelStates.waiting_for_channel)
     text = (
-        "➕ <b>Kanalni qo'lda qo'shish</b>\n\n"
-        "Kanalning <code>@username</code>ini, sonli ID raqamini kiriting yoki kanaldan biror xabarni shu yerga forward qiling:\n\n"
-        "<i>Eslatma: Bot avval o'sha kanalga admin qilib qo'shilgan bo'lishi kerak.</i>"
+        "➕ <b>Kanal yoki guruhni qo'lda qo'shish</b>\n\n"
+        "Kanal/guruhning <code>@username</code>ini, sonli ID raqamini kiriting yoki kanal/guruhdan biror xabarni shu yerga forward qiling:\n\n"
+        "<i>Eslatma: Bot avval o'sha kanal/guruhga admin qilib qo'shilgan bo'lishi kerak.</i>"
     )
     if callback.message:
         await safe_edit_text(callback.message, text)
@@ -161,7 +164,7 @@ async def process_manual_channel_input(
     message: Message, state: FSMContext, bot: Bot, session: AsyncSession
 ) -> None:
     chat_identifier = None
-    if message.forward_from_chat and message.forward_from_chat.type == "channel":
+    if message.forward_from_chat and message.forward_from_chat.type in ("channel", "group", "supergroup"):
         chat_identifier = message.forward_from_chat.id
     elif message.text:
         txt = message.text.strip()
@@ -169,7 +172,7 @@ async def process_manual_channel_input(
             chat_identifier = int(txt) if txt.lstrip("-").isdigit() else txt
 
     if not chat_identifier:
-        await message.answer("⚠️ Yaroqsiz ma'lumot. Iltimos @username, ID kiriting yoki kanaldan xabar forward qiling:")
+        await message.answer("⚠️ Yaroqsiz ma'lumot. Iltimos @username, ID kiriting yoki kanal/guruhdan xabar forward qiling:")
         return
 
     try:
@@ -177,7 +180,7 @@ async def process_manual_channel_input(
         bot_user = await bot.get_me()
         member = await bot.get_chat_member(chat_id=tg_chat.id, user_id=bot_user.id)
         if member.status not in ("administrator", "creator"):
-            await message.answer("❌ Bot ushbu kanalda administrator emas! Avval botni admin qiling.")
+            await message.answer("❌ Bot ushbu kanal/guruhda administrator emas! Avval botni admin qiling.")
             return
 
         existing = await get_required_channel_by_chat_id(session, tg_chat.id)
@@ -205,4 +208,4 @@ async def process_manual_channel_input(
 
     except Exception as e:
         logger.error("Error manually adding channel %s: %s", chat_identifier, e)
-        await message.answer(f"❌ Kanalni tekshirishda xatolik yuz berdi: {e}")
+        await message.answer("❌ Kanalni tekshirishda xatolik yuz berdi. Qaytadan urinib ko'ring.")

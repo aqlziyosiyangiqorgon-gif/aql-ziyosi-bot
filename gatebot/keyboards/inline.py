@@ -28,6 +28,20 @@ class AdminCb(CallbackData, prefix="a"):
     admin_id: int = 0
 
 
+class CheckSubCb(CallbackData, prefix="sub"):
+    group_chat_id: int
+
+
+class BroadcastCb(CallbackData, prefix="bc"):
+    action: str  # "target", "send", "cancel"
+    target: str = ""  # "users", "groups", "all"
+
+
+class SupportCb(CallbackData, prefix="sup"):
+    action: str  # "write", "reply", "cancel"
+    user_id: int = 0
+
+
 # --- Detection confirmation keyboards ---
 def group_confirm_kb(chat_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -51,11 +65,22 @@ def channel_confirm_kb(chat_id: int) -> InlineKeyboardMarkup:
     )
 
 
-def missing_channels_kb(channels: Sequence[RequiredChannel]) -> InlineKeyboardMarkup | None:
+def missing_channels_kb(
+    channels: Sequence[RequiredChannel], group_chat_id: int | None = None
+) -> InlineKeyboardMarkup | None:
     rows: list[list[InlineKeyboardButton]] = []
     for ch in channels:
         if ch.url:
             rows.append([InlineKeyboardButton(text=f"👉 {ch.title}", url=ch.url)])
+    if group_chat_id:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text="✅ Obuna bo'ldim",
+                    callback_data=CheckSubCb(group_chat_id=group_chat_id).pack(),
+                )
+            ]
+        )
     return InlineKeyboardMarkup(inline_keyboard=rows) if rows else None
 
 
@@ -85,6 +110,12 @@ def admin_main_menu_kb(
             ],
             [
                 InlineKeyboardButton(
+                    text="✉️ Xabar yuborish",
+                    callback_data=NavCb(target="broadcast").pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text="📊 Statistika",
                     callback_data=NavCb(target="stats").pack(),
                 ),
@@ -93,6 +124,50 @@ def admin_main_menu_kb(
                     callback_data=NavCb(target="backup").pack(),
                 ),
             ],
+        ]
+    )
+
+
+def broadcast_target_kb(users_count: int, groups_count: int) -> InlineKeyboardMarkup:
+    total_count = users_count + groups_count
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"👤 Foydalanuvchilarga ({users_count})",
+                    callback_data=BroadcastCb(action="target", target="users").pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"👥 Guruhlarga ({groups_count})",
+                    callback_data=BroadcastCb(action="target", target="groups").pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"📢 Barchaga ({total_count})",
+                    callback_data=BroadcastCb(action="target", target="all").pack(),
+                )
+            ],
+            [InlineKeyboardButton(text="⬅️ Orqaga", callback_data=NavCb(target="main").pack())],
+        ]
+    )
+
+
+def broadcast_confirm_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🚀 Yuborish",
+                    callback_data=BroadcastCb(action="send", target="").pack(),
+                ),
+                InlineKeyboardButton(
+                    text="❌ Bekor qilish",
+                    callback_data=BroadcastCb(action="cancel", target="").pack(),
+                ),
+            ]
         ]
     )
 
@@ -256,6 +331,12 @@ def stats_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
+                    text="📥 Excel hisobot (.xlsx)",
+                    callback_data=NavCb(target="stats_export").pack(),
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text="🔄 Yangilash",
                     callback_data=NavCb(target="stats").pack(),
                 ),
@@ -263,6 +344,45 @@ def stats_kb() -> InlineKeyboardMarkup:
                     text="⬅️ Bosh menyu",
                     callback_data=NavCb(target="main").pack(),
                 ),
+            ],
+        ]
+    )
+
+
+def support_start_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✍️ Adminga yozish",
+                    callback_data=SupportCb(action="write").pack(),
+                )
+            ]
+        ]
+    )
+
+
+def support_admin_reply_kb(user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✍️ Javob berish",
+                    callback_data=SupportCb(action="reply", user_id=user_id).pack(),
+                )
+            ]
+        ]
+    )
+
+
+def support_cancel_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="❌ Bekor qilish",
+                    callback_data=SupportCb(action="cancel").pack(),
+                )
             ]
         ]
     )

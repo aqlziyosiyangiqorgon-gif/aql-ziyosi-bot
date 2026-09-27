@@ -2,6 +2,7 @@
 
 import logging
 import os
+import shutil
 import sqlite3
 import tempfile
 import zipfile
@@ -105,14 +106,4 @@ async def perform_backup(bot: Bot, settings: Settings) -> bool:
         return False
 
     finally:
-        # Cleanup temp directory
-        for p in (backup_db_path, backup_zip_path):
-            if os.path.exists(p):
-                try:
-                    os.remove(p)
-                except Exception:
-                    pass
-        try:
-            os.rmdir(temp_dir)
-        except Exception:
-            pass
+        shutil.rmtree(temp_dir, ignore_errors=True)

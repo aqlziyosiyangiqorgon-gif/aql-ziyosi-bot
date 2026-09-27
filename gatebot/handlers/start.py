@@ -7,7 +7,8 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatebot.config import Settings
-from gatebot.db.crud import is_admin
+from gatebot.db.crud import add_or_update_user, is_admin
+from gatebot.keyboards.inline import NavCb, SupportCb
 from gatebot.texts import PUBLIC_GREETING, WELCOME_ADMIN
 
 router = Router(name="start")
@@ -21,13 +22,27 @@ async def handle_start(
     if message.chat.type != ChatType.PRIVATE or not message.from_user:
         return
 
+    # Track user for broadcasts
+    await add_or_update_user(
+        session,
+        tg_id=message.from_user.id,
+        first_name=message.from_user.first_name,
+        username=message.from_user.username,
+    )
+
     user_is_adm = await is_admin(session, message.from_user.id, settings.ADMIN_IDS)
     if user_is_adm:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
-                [InlineKeyboardButton(text="⚙️ Admin panel", callback_data="admin_nav:main")]
+                [InlineKeyboardButton(text="⚙️ Admin panel", callback_data=NavCb(target="main").pack())],
+                [InlineKeyboardButton(text="💬 Qo'llab-quvvatlash", callback_data=SupportCb(action="write").pack())],
             ]
         )
         await message.answer(WELCOME_ADMIN, reply_markup=kb)
     else:
-        await message.answer(PUBLIC_GREETING)
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="💬 Qo'llab-quvvatlash / Adminga yozish", callback_data=SupportCb(action="write").pack())]
+            ]
+        )
+        await message.answer(PUBLIC_GREETING, reply_markup=kb)

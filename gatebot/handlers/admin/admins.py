@@ -55,8 +55,8 @@ async def process_add_admin(
     message: Message, state: FSMContext, session: AsyncSession
 ) -> None:
     text = (message.text or "").strip()
-    if not text.isdigit():
-        await message.answer("⚠️ Iltimos, faqat raqamlardan iborat Telegram ID kiriting:")
+    if not text.isdigit() or int(text) == 0:
+        await message.answer("⚠️ Yaroqli Telegram ID kiriting (musbat son):")
         return
 
     tg_id = int(text)
@@ -88,6 +88,5 @@ async def delete_admin_handler(
         return
 
     await remove_admin(session, admin_id)
-    await callback.answer("Admin o'chirildi")
-    if callback.message:
-        await safe_edit_text(callback.message, ADMIN_REMOVED.format(tg_id=admin_id))
+    await callback.answer(ADMIN_REMOVED.format(tg_id=admin_id))
+    await nav_admins(callback, session, settings)

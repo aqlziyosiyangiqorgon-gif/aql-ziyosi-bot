@@ -10,7 +10,7 @@ NOT_ADMIN = "⛔️ Bu buyruq faqat administratorlar uchun."
 DECLINE_DM = (
     "⛔️ Kechirasiz, guruhga qo'shilish uchun avval quyidagi kanal(lar)ga a'zo bo'lishingiz kerak:\n"
     "{channels}\n\n"
-    "A'zo bo'lgach, guruhga qayta qo'shilish so'rovini yuboring."
+    "Barcha kanallarga a'zo bo'lgach, quyidagi «✅ Obuna bo'ldim» tugmasini bosing."
 )
 APPROVE_DM = "✅ Xush kelibsiz! Siz «{group_title}» guruhiga qabul qilindingiz."
 NEW_GROUP_DETECTED = (

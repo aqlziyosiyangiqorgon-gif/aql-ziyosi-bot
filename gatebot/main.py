@@ -15,7 +15,7 @@ from aiogram.types import BotCommand, ErrorEvent
 from gatebot.config import Settings, load_settings
 from gatebot.db.migrations import run_upgrade_head
 from gatebot.db.session import dispose_engine, init_engine
-from gatebot.handlers import chat_events, join_requests, start
+from gatebot.handlers import chat_events, join_requests, start, support
 from gatebot.handlers.admin import admin_router
 from gatebot.middlewares.db_session import DbSessionMiddleware
 from gatebot.services.notify import notify_system_error
@@ -84,6 +84,7 @@ def create_dispatcher(settings: Settings) -> Dispatcher:
     dp.include_router(admin_router)
     dp.include_router(join_requests.router)
     dp.include_router(chat_events.router)
+    dp.include_router(support.router)
 
     return dp
 
@@ -95,6 +96,12 @@ def register_global_error_handler(
 
     @dp.errors()
     async def global_error_handler(event: ErrorEvent) -> bool:
+        from aiogram.exceptions import TelegramRetryAfter
+
+        if isinstance(event.exception, TelegramRetryAfter):
+            logger.warning("Rate limited, retry after %s seconds", event.exception.retry_after)
+            return False
+
         logger.error(
             "Unhandled exception: %s",
             event.exception,
