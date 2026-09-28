@@ -135,3 +135,44 @@ async def handle_navigation(
             await safe_edit_text(callback.message, status_msg, reply_markup=backup_kb())
 
     await callback.answer()
+
+
+@router.message(F.document)
+async def handle_db_restore_upload(
+    message: Message,
+    bot: Bot,
+    settings: Settings,
+) -> None:
+    """Handle admin uploading a database backup (.db or .zip) to restore data."""
+    doc = message.document
+    if not doc or not doc.file_name:
+        return
+
+    fname = doc.file_name.lower()
+    if not (fname.endswith(".db") or fname.endswith(".zip") or fname.endswith(".sqlite")):
+        return
+
+    from gatebot.services.backup import restore_sqlite_database
+    from gatebot.utils.html import escape_html
+
+    status_msg = await message.answer("⏳ Baza tekshirilmoqda va tiklanmoqda...")
+    file_io = await bot.download(doc.file_id)
+    if not file_io:
+        await status_msg.edit_text("❌ Faylni yuklab olishda xatolik yuz berdi.")
+        return
+
+    file_bytes = file_io.read()
+    ok, err = restore_sqlite_database(file_bytes, settings.DATABASE_URL)
+    if ok:
+        try:
+            from gatebot.db.migrations import run_upgrade_head
+            run_upgrade_head()
+        except Exception:
+            pass
+        await status_msg.edit_text(
+            "✅ <b>Baza muvaffaqiyatli tiklandi!</b>\n\n"
+            "Barcha guruhlar, kanallar, a'zolar va sozlamalar bazadan to'liq tiklandi."
+        )
+    else:
+        await status_msg.edit_text(f"❌ <b>Tiklashda xatolik:</b> {escape_html(err)}")
+

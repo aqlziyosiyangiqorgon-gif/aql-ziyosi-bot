@@ -107,3 +107,55 @@ async def perform_backup(bot: Bot, settings: Settings) -> bool:
 
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def restore_sqlite_database(uploaded_bytes: bytes, target_db_url: str) -> tuple[bool, str]:
+    """
+    Restore an SQLite database from uploaded .db or .zip file.
+    Validates SQLite header and atomically replaces the active database.
+    """
+    if "sqlite" not in target_db_url:
+        return False, "Faqat SQLite bazasini tiklash mumkin."
+
+    target_path = extract_sqlite_path(target_db_url)
+    if not target_path or target_path == ":memory:":
+        return False, "Baza fayli yo'li aniqlanmadi."
+
+    temp_dir = tempfile.mkdtemp(prefix="gatebot_restore_")
+    try:
+        temp_file = os.path.join(temp_dir, "uploaded_file")
+        with open(temp_file, "wb") as f:
+            f.write(uploaded_bytes)
+
+        db_file_to_restore = temp_file
+        if zipfile.is_zipfile(temp_file):
+            with zipfile.ZipFile(temp_file, "r") as zf:
+                db_names = [n for n in zf.namelist() if n.endswith(".db") or n.endswith(".sqlite")]
+                if not db_names:
+                    return False, "Zip fayl ichida .db fayl topilmadi."
+                extracted = zf.extract(db_names[0], temp_dir)
+                db_file_to_restore = extracted
+
+        # Validate SQLite magic header
+        with open(db_file_to_restore, "rb") as f:
+            header = f.read(16)
+            if not header.startswith(b"SQLite format 3"):
+                return False, "Yuklangan fayl haqiqiy SQLite ma'lumotlar bazasi emas."
+
+        # Ensure target dir exists
+        target_dir = os.path.dirname(target_path)
+        if target_dir:
+            os.makedirs(target_dir, exist_ok=True)
+
+        # Backup current database before replacing
+        if os.path.exists(target_path):
+            shutil.copy2(target_path, f"{target_path}.bak")
+
+        shutil.copy2(db_file_to_restore, target_path)
+        return True, "Ma'lumotlar bazasi muvaffaqiyatli tiklandi."
+    except Exception as e:
+        logger.error("Failed to restore database: %s", e, exc_info=True)
+        return False, f"Xatolik: {e}"
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
