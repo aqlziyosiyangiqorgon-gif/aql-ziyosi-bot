@@ -121,7 +121,12 @@ async def test_admin_adds_bot_to_group_prompts_confirmation(mock_bot, db_session
     call_args = mock_bot.send_message.call_args[1]
     assert call_args["chat_id"] == test_settings.ADMIN_IDS[0]
     assert "Target Group" in call_args["text"]
-    assert "Uni himoyalangan guruhlar ro'yxatiga qo'shaymi?" in call_args["text"]
+    assert "Guruh avtomatik himoyaga olindi" in call_args["text"]
+
+    group = await get_protected_group_by_chat_id(db_session, -100666)
+    assert group is not None
+    assert group.is_active is True
+
 
 
 @pytest.mark.asyncio

@@ -100,30 +100,51 @@ async def on_bot_promoted_to_admin(
 
     # Inviter IS an admin:
     if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
-        # Check invite permission
-        can_invite = getattr(new_member, "can_invite_users", False)
-        if not can_invite:
-            try:
-                warn_text = WARN_NO_INVITE_PERMISSION.format(title=escape_html(chat.title))
-                await bot.send_message(chat_id=inviter.id, text=warn_text)
-            except Exception as e:
-                logger.debug("Could not DM permission warning to admin %d: %s", inviter.id, e)
+        # 1. Automatically register and activate the protected group
+        await add_or_update_protected_group(
+            session=session,
+            chat_id=chat.id,
+            title=chat.title or "Noma'lum guruh",
+        )
 
-        # Send confirmation prompt
-        prompt_text = NEW_GROUP_DETECTED.format(title=escape_html(chat.title))
-        kb = group_confirm_kb(chat.id)
+        can_invite = getattr(new_member, "can_invite_users", False)
+        notify_text = (
+            f"✅ <b>Guruh avtomatik himoyaga olindi!</b>\n\n"
+            f"«<b>{escape_html(chat.title)}</b>» guruhi tizimga muvaffaqiyatli qo'shildi va faollashtirildi.\n\n"
+            f"🛡 Endi foydalanuvchilar majburiy kanallarga to'liq a'zo bo'lmaguncha ushbu guruhga kiritilmaydi."
+        )
+        if not can_invite:
+            notify_text += (
+                f"\n\n⚠️ <b>Muhim eslatma:</b> Botga guruh sozlamalarida "
+                f"«Foydalanuvchilarni taklif qilish» (Invite Users) ruxsatini yoqib qo'yishni unutmang."
+            )
+
         try:
-            await bot.send_message(chat_id=inviter.id, text=prompt_text, reply_markup=kb)
+            await bot.send_message(chat_id=inviter.id, text=notify_text)
         except Exception as e:
-            logger.error("Could not send group confirmation prompt to admin %d: %s", inviter.id, e)
+            logger.error("Could not send group activation notice to admin %d: %s", inviter.id, e)
 
     elif chat.type == ChatType.CHANNEL:
-        prompt_text = NEW_CHANNEL_DETECTED.format(title=escape_html(chat.title))
-        kb = channel_confirm_kb(chat.id)
+        channel_url = None
+        if chat.username:
+            channel_url = f"https://t.me/{chat.username}"
+
+        await add_or_update_required_channel(
+            session=session,
+            chat_id=chat.id,
+            title=chat.title or "Noma'lum kanal",
+            url=channel_url,
+        )
+
+        ch_notify = (
+            f"📢 <b>Majburiy kanal avtomatik qo'shildi!</b>\n\n"
+            f"«<b>{escape_html(chat.title)}</b>» kanali majburiy a'zolik ro'yxatiga qo'shildi va faollashtirildi.\n\n"
+            f"Endi barcha himoyalangan guruhlarga kirish uchun ushbu kanalga obuna bo'lish talab etiladi."
+        )
         try:
-            await bot.send_message(chat_id=inviter.id, text=prompt_text, reply_markup=kb)
+            await bot.send_message(chat_id=inviter.id, text=ch_notify)
         except Exception as e:
-            logger.error("Could not send channel confirmation prompt to admin %d: %s", inviter.id, e)
+            logger.error("Could not send channel activation notice to admin %d: %s", inviter.id, e)
 
 
 # 2. Bot REMOVED or demoted from admin
