@@ -3,6 +3,7 @@
 import logging
 
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
@@ -168,19 +169,60 @@ async def process_manual_channel_input(
         chat_identifier = message.forward_from_chat.id
     elif message.text:
         txt = message.text.strip()
-        if txt.startswith("@") or txt.lstrip("-").isdigit():
-            chat_identifier = int(txt) if txt.lstrip("-").isdigit() else txt
+        # Support full links: https://t.me/channel, t.me/channel
+        if "t.me/" in txt:
+            slug = txt.split("t.me/")[-1].strip().split("/")[0].split("?")[0]
+            if not slug.startswith("+") and not slug.startswith("joinchat"):
+                chat_identifier = f"@{slug}"
+        elif txt.startswith("@"):
+            chat_identifier = txt
+        elif txt.lstrip("-").isdigit():
+            chat_identifier = int(txt)
 
     if not chat_identifier:
-        await message.answer("⚠️ Yaroqsiz ma'lumot. Iltimos @username, ID kiriting yoki kanal/guruhdan xabar forward qiling:")
+        await message.answer(
+            "⚠️ <b>Yaroqsiz ma'lumot!</b>\n\n"
+            "Iltimos, quyidagilardan birini yuboring:\n"
+            "• Kanal username'i (masalan: <code>@kanal_nomi</code> yoki <code>https://t.me/kanal_nomi</code>)\n"
+            "• Yoki kanaldan biror postni bu yerga <b>Forward</b> qilib yuboring\n"
+            "• Yoki kanalning sonli ID raqamini kiriting (masalan: <code>-1001234567890</code>)"
+        )
         return
 
     try:
         tg_chat = await bot.get_chat(chat_identifier)
+    except TelegramBadRequest as e:
+        err_lower = str(e).lower()
+        if "chat not found" in err_lower or "user not found" in err_lower:
+            await message.answer(
+                "❌ <b>Kanal topilmadi yoki bot kanalga qo'shilmagan!</b>\n\n"
+                "Iltimos, quyidagilarni tekshiring:\n"
+                "1. Kanal username'i to'g'ri yozilganmi?\n"
+                "2. <b>Eng muhimi:</b> Avval botni o'sha kanalga kirib <b>Administrator</b> qilib tayinlashingiz shart (aks holda Telegram botga kanalni tekshirishga ruxsat bermaydi)!"
+            )
+            return
+        logger.warning("TelegramBadRequest on get_chat: %s", e)
+        await message.answer(f"❌ <b>Xatolik:</b> {escape_html(str(e))}")
+        return
+    except TelegramForbiddenError:
+        await message.answer(
+            "❌ <b>Bot ushbu kanalga kira olmadi!</b>\n\n"
+            "Kanal sozlamalariga kirib, botni <b>Administrator</b> qilib qo'shing."
+        )
+        return
+    except Exception as e:
+        logger.error("Error fetching chat %s: %s", chat_identifier, e)
+        await message.answer("❌ Kanalni tekshirishda xatolik yuz berdi. Botni kanalga admin qilib qo'shganingizga ishonch hosil qiling.")
+        return
+
+    try:
         bot_user = await bot.get_me()
         member = await bot.get_chat_member(chat_id=tg_chat.id, user_id=bot_user.id)
         if member.status not in ("administrator", "creator"):
-            await message.answer("❌ Bot ushbu kanal/guruhda administrator emas! Avval botni admin qiling.")
+            await message.answer(
+                "❌ <b>Bot ushbu kanalda administrator emas!</b>\n\n"
+                "Iltimos, kanal sozlamalariga kiring va botga <b>Administrator</b> huquqini bering, so'ngra qaytadan yuboring."
+            )
             return
 
         existing = await get_required_channel_by_chat_id(session, tg_chat.id)
@@ -201,11 +243,21 @@ async def process_manual_channel_input(
             return
 
         await state.clear()
-        res_msg = f"✅ «{escape_html(title)}» kanali muvaffaqiyatli majburiy kanallar safiga qo'shildi!"
+        res_msg = f"✅ «<b>{escape_html(title)}</b>» kanali muvaffaqiyatli majburiy kanallar safiga qo'shildi!"
         if not url:
             res_msg += "\n\n💡 <i>Eslatma: Kanal yopiq. Foydalanuvchilar o'tishi uchun havola (URL) kiritishni unutmang.</i>"
         await message.answer(res_msg)
 
+    except TelegramBadRequest as e:
+        err_lower = str(e).lower()
+        if "user not found" in err_lower or "not a member" in err_lower:
+            await message.answer(
+                "❌ <b>Bot ushbu kanalga hali admin qilib qo'shilmagan!</b>\n\n"
+                "Avval kanalingizga kirib, botni <b>Administrator</b> qiling, so'ngra kanalni qayta yuboring."
+            )
+            return
+        await message.answer(f"❌ <b>Xatolik:</b> {escape_html(str(e))}")
     except Exception as e:
         logger.error("Error manually adding channel %s: %s", chat_identifier, e)
         await message.answer("❌ Kanalni tekshirishda xatolik yuz berdi. Qaytadan urinib ko'ring.")
+
