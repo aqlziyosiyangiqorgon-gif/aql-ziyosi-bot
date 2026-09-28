@@ -50,6 +50,6 @@ async def test_handle_start_admin_user(db_session, test_settings, mock_bot):
     assert args[0] == WELCOME_ADMIN
     reply_markup = kwargs["reply_markup"]
     assert len(reply_markup.inline_keyboard) == 4
-    assert reply_markup.inline_keyboard[0][0].callback_data.startswith("n:main")
+    assert "startchannel=true" in reply_markup.inline_keyboard[0][0].url
     assert "startgroup=true" in reply_markup.inline_keyboard[1][0].url
-    assert "startchannel=true" in reply_markup.inline_keyboard[2][0].url
+    assert reply_markup.inline_keyboard[2][0].callback_data.startswith("n:main")

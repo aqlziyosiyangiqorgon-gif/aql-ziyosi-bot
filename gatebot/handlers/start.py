@@ -43,9 +43,9 @@ async def handle_start(
     if user_is_adm:
         kb = InlineKeyboardMarkup(
             inline_keyboard=[
+                [InlineKeyboardButton(text="📢 Mening kanalim (Admin qilish)", url=add_channel_url)],
+                [InlineKeyboardButton(text="👥 Guruhimga qo'shish (Admin qilish)", url=add_group_url)],
                 [InlineKeyboardButton(text="⚙️ Administrator paneli", callback_data=NavCb(target="main").pack())],
-                [InlineKeyboardButton(text="➕ Guruhga admin qilish", url=add_group_url)],
-                [InlineKeyboardButton(text="📢 Kanalga admin qilish", url=add_channel_url)],
                 [InlineKeyboardButton(text="💬 Qo'llab-quvvatlash", callback_data=SupportCb(action="write").pack())],
             ]
         )
