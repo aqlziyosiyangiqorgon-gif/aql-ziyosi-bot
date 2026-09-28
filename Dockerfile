@@ -15,12 +15,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p /data logs
-
-# Railway Volume mount point
-VOLUME ["/data"]
-
-# Default DATABASE_URL pointing to the volume
-ENV DATABASE_URL=sqlite+aiosqlite:////data/bot.db
+RUN mkdir -p data logs
 
 CMD ["python", "-m", "gatebot.main"]
