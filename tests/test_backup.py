@@ -98,3 +98,55 @@ async def test_perform_backup_postgres_skip():
     success = await perform_backup(mock_bot, settings)
     assert success is True
     mock_bot.send_document.assert_not_called()
+
+
+def test_restore_sqlite_database_valid_and_invalid():
+    """Verify restore_sqlite_database handles valid .db, .zip, and invalid files."""
+    import zipfile
+    from gatebot.services.backup import restore_sqlite_database
+
+    temp_dir = tempfile.mkdtemp()
+    try:
+        sample_db = os.path.join(temp_dir, "sample.db")
+        target_db = os.path.join(temp_dir, "restored.db")
+        target_url = f"sqlite+aiosqlite:///{target_db}"
+
+        # Create valid sqlite
+        conn = sqlite3.connect(sample_db)
+        with conn:
+            conn.execute("CREATE TABLE users (id INT, name TEXT)")
+            conn.execute("INSERT INTO users VALUES (1, 'Ali')")
+        conn.close()
+
+        with open(sample_db, "rb") as f:
+            raw_bytes = f.read()
+
+        # 1. Test valid .db restore
+        ok, msg = restore_sqlite_database(raw_bytes, target_url)
+        assert ok is True
+        assert os.path.exists(target_db)
+
+        # Check restored data
+        r_conn = sqlite3.connect(target_db)
+        row = r_conn.execute("SELECT name FROM users WHERE id = 1").fetchone()
+        r_conn.close()
+        assert row == ("Ali",)
+
+        # 2. Test valid .zip restore
+        zip_path = os.path.join(temp_dir, "backup.zip")
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.write(sample_db, arcname="bot.db")
+        with open(zip_path, "rb") as f:
+            zip_bytes = f.read()
+
+        ok, msg = restore_sqlite_database(zip_bytes, target_url)
+        assert ok is True
+
+        # 3. Test invalid corrupted content
+        ok, err = restore_sqlite_database(b"NOT A SQLITE FILE DATA AT ALL", target_url)
+        assert ok is False
+        assert "haqiqiy SQLite" in err
+    finally:
+        import shutil
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
