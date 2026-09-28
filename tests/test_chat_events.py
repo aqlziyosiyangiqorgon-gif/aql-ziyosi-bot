@@ -85,8 +85,8 @@ def make_chat_member_updated(
 
 
 @pytest.mark.asyncio
-async def test_non_admin_adds_bot_leaves_chat(mock_bot, db_session, test_settings):
-    """Non-admin adds the bot -> bot leaves automatically, alerts admins."""
+async def test_non_admin_adds_bot_to_group_activates(mock_bot, db_session, test_settings):
+    """Non-admin adds bot to group -> group is protected and activated, admin alerted."""
     event = make_chat_member_updated(
         chat_type=ChatType.SUPERGROUP,
         chat_id=-100555,
@@ -97,9 +97,31 @@ async def test_non_admin_adds_bot_leaves_chat(mock_bot, db_session, test_setting
 
     await on_bot_promoted_to_admin(event, mock_bot, db_session, test_settings)
 
-    mock_bot.leave_chat.assert_called_once_with(-100555)
-    # Alerts sent to super admins
+    mock_bot.leave_chat.assert_not_called()
+    group = await get_protected_group_by_chat_id(db_session, -100555)
+    assert group is not None
+    assert group.is_active is True
+    # Alerts sent to super admins and inviter
     assert mock_bot.send_message.call_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_non_admin_adds_bot_to_channel_leaves(mock_bot, db_session, test_settings):
+    """Non-admin adds bot to channel -> bot leaves channel, alerts admins."""
+    event = make_chat_member_updated(
+        chat_type=ChatType.CHANNEL,
+        chat_id=-100888,
+        chat_title="Random Channel",
+        inviter_id=12345,  # NOT in ADMIN_IDS
+        new_status=ChatMemberStatus.ADMINISTRATOR,
+    )
+
+    await on_bot_promoted_to_admin(event, mock_bot, db_session, test_settings)
+
+    mock_bot.leave_chat.assert_called_once_with(-100888)
+    ch = await get_required_channel_by_chat_id(db_session, -100888)
+    assert ch is None
+
 
 
 @pytest.mark.asyncio

@@ -73,34 +73,12 @@ async def on_bot_promoted_to_admin(
         inviter.id,
     )
 
-    # Verify if inviter is an authorized admin
+    # Check if inviter is authorized admin
     user_is_adm = await is_admin(session, inviter.id, settings.ADMIN_IDS)
-    if not user_is_adm:
-        logger.warning(
-            "Bot was added by non-admin user %d to %s %d. Leaving chat.",
-            inviter.id,
-            chat.type,
-            chat.id,
-        )
-        try:
-            if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
-                await bot.send_message(chat_id=chat.id, text=LEFT_NON_ADMIN_ADD)
-            await bot.leave_chat(chat.id)
-        except Exception as e:
-            logger.error("Failed to leave unauthorized chat %d: %s", chat.id, e)
 
-        await notify_non_admin_add(
-            bot=bot,
-            admin_ids=settings.ADMIN_IDS,
-            chat_title=chat.title or "Noma'lum",
-            chat_id=chat.id,
-            user_id=inviter.id,
-        )
-        return
-
-    # Inviter IS an admin:
+    # 1. GROUP / SUPERGROUP: Any group owner can add the bot!
     if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
-        # 1. Automatically register and activate the protected group
+        # Automatically register and activate the protected group
         await add_or_update_protected_group(
             session=session,
             chat_id=chat.id,
@@ -111,20 +89,57 @@ async def on_bot_promoted_to_admin(
         notify_text = (
             f"✅ <b>Guruh avtomatik himoyaga olindi!</b>\n\n"
             f"«<b>{escape_html(chat.title)}</b>» guruhi tizimga muvaffaqiyatli qo'shildi va faollashtirildi.\n\n"
-            f"🛡 Endi foydalanuvchilar majburiy kanallarga to'liq a'zo bo'lmaguncha ushbu guruhga kiritilmaydi."
+            f"🛡 Endi guruhga kirish so'rovlari avtomatik tekshirilib, obuna bo'lganlargina qabul qilinadi."
         )
         if not can_invite:
             notify_text += (
-                f"\n\n⚠️ <b>Muhim eslatma:</b> Botga guruh sozlamalarida "
-                f"«Foydalanuvchilarni taklif qilish» (Invite Users) ruxsatini yoqib qo'yishni unutmang."
+                f"\n\n⚠️ <b>Muhim eslatma:</b> Bot to'liq ishlashi uchun guruh sozlamalarida "
+                f"«Foydalanuvchilarni taklif qilish» (Invite Users) ruxsatini yoqib qo'ying."
             )
 
         try:
             await bot.send_message(chat_id=inviter.id, text=notify_text)
         except Exception as e:
-            logger.error("Could not send group activation notice to admin %d: %s", inviter.id, e)
+            logger.debug("Could not send group activation notice to inviter %d: %s", inviter.id, e)
 
+        # If added by an external group owner (not super admin), notify super admin
+        if not user_is_adm:
+            username_part = f"@{escape_html(inviter.username)}" if inviter.username else f"ID: <code>{inviter.id}</code>"
+            admin_alert = (
+                f"🔔 <b>Yangi tashqi guruh ulandi!</b>\n\n"
+                f"• Guruh: <b>{escape_html(chat.title)}</b>\n"
+                f"• Qo'shgan egasi: <a href=\"tg://user?id={inviter.id}\">{escape_html(inviter.full_name)}</a> ({username_part})\n"
+                f"• Guruh ID: <code>{chat.id}</code>\n\n"
+                f"<i>Ushbu guruh a'zolari sizning kanallaringizga obuna bo'lish evaziga guruhga kiritiladi.</i>"
+            )
+            for adm_id in settings.ADMIN_IDS:
+                try:
+                    await bot.send_message(chat_id=adm_id, text=admin_alert)
+                except Exception:
+                    pass
+
+    # 2. CHANNEL: Only authorized admins can add Required Channels!
     elif chat.type == ChatType.CHANNEL:
+        if not user_is_adm:
+            logger.warning(
+                "Non-admin %d tried to add bot to channel %s %d. Leaving channel.",
+                inviter.id,
+                chat.title,
+                chat.id,
+            )
+            try:
+                await bot.leave_chat(chat.id)
+            except Exception as e:
+                logger.error("Failed to leave unauthorized channel %d: %s", chat.id, e)
+            await notify_non_admin_add(
+                bot=bot,
+                admin_ids=settings.ADMIN_IDS,
+                chat_title=chat.title or "Noma'lum kanal",
+                chat_id=chat.id,
+                user_id=inviter.id,
+            )
+            return
+
         channel_url = None
         if chat.username:
             channel_url = f"https://t.me/{chat.username}"
