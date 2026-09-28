@@ -169,7 +169,13 @@ async def start_bot(settings: Settings, bot: Bot, dp: Dispatcher) -> None:
     try:
         # 6. Polling with explicitly resolved update types
         used_updates = dp.resolve_used_update_types()
-        critical_updates = {"message", "callback_query", "chat_join_request", "my_chat_member"}
+        critical_updates = {
+            "message",
+            "callback_query",
+            "chat_join_request",
+            "my_chat_member",
+            "chat_member",
+        }
         allowed_updates = list(set(used_updates).union(critical_updates))
 
         logger.info("Starting polling with allowed_updates=%s", allowed_updates)

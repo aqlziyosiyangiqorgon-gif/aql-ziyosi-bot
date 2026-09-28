@@ -7,6 +7,8 @@ from aiogram.enums import ChatType
 from aiogram.filters.chat_member_updated import (
     ADMINISTRATOR,
     IS_NOT_MEMBER,
+    KICKED,
+    LEFT,
     MEMBER,
     RESTRICTED,
     ChatMemberUpdatedFilter,
@@ -119,10 +121,20 @@ async def on_bot_promoted_to_admin(
                 f"👉 <code>{invite_link_str}</code>\n\n"
                 f"<i>Odamlarni ushbu havola orqali taklif qilsangiz, bot ularni kirmasdan oldin tekshiradi.</i>"
             )
-        elif not can_invite:
+        can_restrict = getattr(new_member, "can_restrict_members", False)
+        can_delete = getattr(new_member, "can_delete_messages", False)
+        missing_perms = []
+        if not can_invite:
+            missing_perms.append("• «Foydalanuvchilarni taklif qilish» (Invite Users / So'rovlarni qabul qilish)")
+        if not can_restrict:
+            missing_perms.append("• «Foydalanuvchilarni cheklash/ban qilish» (Restrict/Ban Members)")
+        if not can_delete:
+            missing_perms.append("• «Xabarlarni o'chirish» (Delete Messages)")
+
+        if missing_perms:
             notify_text += (
-                f"\n⚠️ <b>Muhim eslatma:</b> Bot to'liq ishlashi va so'rovlarni avtomatik qabul qilishi uchun "
-                f"guruh sozlamalarida «Foydalanuvchilarni taklif qilish» (Invite Users) ruxsatini yoqib qo'ying."
+                f"\n⚠️ <b>Diqqat: Bot to'liq ishlashi uchun guruhda quyidagi huquqlarni yoqib qo'ying:</b>\n"
+                + "\n".join(missing_perms)
             )
 
         try:
@@ -358,6 +370,105 @@ async def on_service_join_leave_message(
                 status="approved",
                 missing_channels=None,
             )
+
+
+# 5. Capture new members via ChatMemberUpdated (handles supergroups with hidden join messages)
+@router.chat_member(
+    ChatMemberUpdatedFilter(
+        member_status_changed=(IS_NOT_MEMBER | LEFT | KICKED) >> (MEMBER | RESTRICTED)
+    )
+)
+async def on_chat_member_joined(
+    event: ChatMemberUpdated,
+    session: AsyncSession,
+    bot: Bot,
+    settings: Settings,
+) -> None:
+    """Verify subscription for members joining supergroups directly."""
+    chat = event.chat
+    if chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+        return
+
+    group = await get_protected_group_by_chat_id(session, chat.id)
+    if not group or not group.is_active:
+        return
+
+    user = event.new_chat_member.user
+    if user.is_bot:
+        return
+
+    if await is_admin(session, user.id, settings.ADMIN_IDS):
+        return
+
+    channels = await get_active_required_channels(session)
+    if not channels:
+        return
+
+    result = await check_user(
+        bot=bot,
+        user_id=user.id,
+        channels=channels,
+        admin_ids=settings.ADMIN_IDS,
+        cache_ttl=settings.SUB_CACHE_SECONDS,
+    )
+    if not result.ok:
+        logger.info(
+            "Direct chat_member join rejected: user %d (%s) missing %d channels in chat %d",
+            user.id,
+            user.full_name,
+            len(result.missing),
+            chat.id,
+        )
+        try:
+            await bot.ban_chat_member(chat_id=chat.id, user_id=user.id)
+            await bot.unban_chat_member(chat_id=chat.id, user_id=user.id)
+        except Exception as e:
+            logger.warning("Could not remove unsubscribed chat_member %d from %d: %s", user.id, chat.id, e)
+
+        dm_sent = False
+        if result.missing:
+            channels_list = "\n".join(f"• {escape_html(ch.title)}" for ch in result.missing)
+            text = DECLINE_DM.format(channels=channels_list)
+            kb = missing_channels_kb(result.missing, chat.id)
+            try:
+                await bot.send_message(chat_id=user.id, text=text, reply_markup=kb)
+                dm_sent = True
+            except Exception as e:
+                logger.debug("Could not DM chat_member %d: %s", user.id, e)
+
+        if not dm_sent:
+            try:
+                bot_user = await bot.get_me()
+                bot_username = bot_user.username or ""
+                await bot.send_message(
+                    chat_id=chat.id,
+                    text=(
+                        f"⛔️ <a href=\"tg://user?id={user.id}\">{escape_html(user.full_name)}</a>, "
+                        f"guruhda qolish uchun majburiy kanallarga a'zo bo'lishingiz shart!\n"
+                        f"Iltimos, botimizga @{bot_username} o'tib obuna bo'ling."
+                    ),
+                )
+            except Exception:
+                pass
+
+        missing_titles = " || ".join([ch.title for ch in result.missing])
+        await log_join_event(
+            session=session,
+            group_id=group.id,
+            user_id=user.id,
+            user_name=user.full_name,
+            status="declined",
+            missing_channels=missing_titles,
+        )
+    else:
+        await log_join_event(
+            session=session,
+            group_id=group.id,
+            user_id=user.id,
+            user_name=user.full_name,
+            status="approved",
+            missing_channels=None,
+        )
 
 
 # 4. Confirmation callbacks from DM prompts

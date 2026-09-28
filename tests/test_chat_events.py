@@ -315,3 +315,32 @@ async def test_direct_join_unsubscribed_removed(db_session, test_settings, mock_
     mock_bot.ban_chat_member.assert_called_once_with(chat_id=-100111, user_id=55555)
     mock_bot.unban_chat_member.assert_called_once_with(chat_id=-100111, user_id=55555)
 
+
+@pytest.mark.asyncio
+async def test_on_chat_member_joined_unsubscribed(db_session, test_settings, mock_bot):
+    """Direct join via ChatMemberUpdated without subscription is removed."""
+    from aiogram.types import ChatMemberLeft, ChatMemberMember
+    from gatebot.handlers.chat_events import on_chat_member_joined
+
+    await add_or_update_protected_group(db_session, chat_id=-100111, title="Active Group")
+    await add_or_update_required_channel(db_session, chat_id=-100222, title="Required Channel")
+
+    mock_bot.get_chat_member.return_value = ChatMemberLeft(
+        user=User(id=66666, is_bot=False, first_name="Unsubscribed User 2")
+    )
+    mock_bot_user = AsyncMock()
+    mock_bot_user.username = "test_bot"
+    mock_bot.get_me.return_value = mock_bot_user
+
+    event = AsyncMock(spec=ChatMemberUpdated)
+    event.chat = Chat(id=-100111, type=ChatType.SUPERGROUP)
+    event.new_chat_member = ChatMemberMember(
+        user=User(id=66666, is_bot=False, first_name="Unsubscribed User 2")
+    )
+
+    await on_chat_member_joined(event, db_session, mock_bot, test_settings)
+
+    mock_bot.ban_chat_member.assert_called_once_with(chat_id=-100111, user_id=66666)
+    mock_bot.unban_chat_member.assert_called_once_with(chat_id=-100111, user_id=66666)
+
+
