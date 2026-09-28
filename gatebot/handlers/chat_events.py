@@ -110,22 +110,13 @@ async def on_bot_promoted_to_admin(
 
         notify_text = (
             f"✅ <b>Guruh avtomatik himoyaga olindi!</b>\n\n"
-            f"«<b>{escape_html(chat.title)}</b>» guruhi tizimga muvaffaqiyatli qo'shildi va faollashtirildi.\n\n"
-            f"🛡 <b>2 tomonlama to'liq himoya faol:</b>\n"
-            f"1. So'rovli havola orqali kelganlar kanallarga a'zo bo'lmaguncha qabul qilinmaydi.\n"
-            f"2. Ochiq guruhdan to'g'ridan-to'g'ri kirganlar ham tekshirilib, obunasi bo'lmasa guruhdan avtomatik chiqariladi.\n"
+            f"«<b>{escape_html(chat.title)}</b>» guruhi tizimga muvaffaqiyatli ulandi.\n\n"
+            f"🧹 <b>Kirdi-chiqdi xabarlari avtomatik tozalanadi.</b>\n"
+            f"🛡 <b>Majburiy obuna nazorati faol:</b> Guruhga kirgan har qanday yangi a'zo tekshiriladi, kanallarga obunasi bo'lmasa, darhol guruhdan chiqarilib, kanal havolalari ko'rsatiladi."
         )
-        if invite_link_str:
-            notify_text += (
-                f"\n🔗 <b>Guruhingiz uchun tayyor so'rovli havola:</b>\n"
-                f"👉 <code>{invite_link_str}</code>\n\n"
-                f"<i>Odamlarni ushbu havola orqali taklif qilsangiz, bot ularni kirmasdan oldin tekshiradi.</i>"
-            )
         can_restrict = getattr(new_member, "can_restrict_members", False)
         can_delete = getattr(new_member, "can_delete_messages", False)
         missing_perms = []
-        if not can_invite:
-            missing_perms.append("• «Foydalanuvchilarni taklif qilish» (Invite Users / So'rovlarni qabul qilish)")
         if not can_restrict:
             missing_perms.append("• «Foydalanuvchilarni cheklash/ban qilish» (Restrict/Ban Members)")
         if not can_delete:
@@ -133,7 +124,7 @@ async def on_bot_promoted_to_admin(
 
         if missing_perms:
             notify_text += (
-                f"\n⚠️ <b>Diqqat: Bot to'liq ishlashi uchun guruhda quyidagi huquqlarni yoqib qo'ying:</b>\n"
+                f"\n\n⚠️ <b>Diqqat: Bot to'liq ishlashi uchun guruh sozlamalarida quyidagi huquqlarni bering:</b>\n"
                 + "\n".join(missing_perms)
             )
 
@@ -324,31 +315,26 @@ async def on_service_join_leave_message(
                     e,
                 )
 
-            # Send private message with channels
-            dm_sent = False
+            # Send clear alert directly in the group with channel buttons
+            kb = missing_channels_kb(missing, message.chat.id) if missing else None
+            try:
+                await target_bot.send_message(
+                    chat_id=message.chat.id,
+                    text=(
+                        f"⛔️ <a href=\"tg://user?id={user.id}\">{escape_html(user.full_name)}</a> guruhdan chiqarildi!\n\n"
+                        f"Guruhda qolish va yozish uchun quyidagi majburiy kanal(lar)ga a'zo bo'ling, so'ngra qayta kiring:"
+                    ),
+                    reply_markup=kb,
+                )
+            except Exception as e:
+                logger.debug("Could not send group kick alert in %d: %s", message.chat.id, e)
+
+            # Also attempt DM to user
             if missing:
                 channels_list = "\n".join(f"• {escape_html(ch.title)}" for ch in missing)
                 text = DECLINE_DM.format(channels=channels_list)
-                kb = missing_channels_kb(missing, message.chat.id)
                 try:
                     await target_bot.send_message(chat_id=user.id, text=text, reply_markup=kb)
-                    dm_sent = True
-                except Exception as e:
-                    logger.debug("Could not DM direct join user %d: %s", user.id, e)
-
-            # If DM failed (user hasn't started bot), notify briefly in group
-            if not dm_sent:
-                try:
-                    bot_user = await target_bot.get_me()
-                    bot_username = bot_user.username or ""
-                    await target_bot.send_message(
-                        chat_id=message.chat.id,
-                        text=(
-                            f"⛔️ <a href=\"tg://user?id={user.id}\">{escape_html(user.full_name)}</a>, "
-                            f"guruhda qolish uchun majburiy kanallarga a'zo bo'lishingiz shart!\n"
-                            f"Iltimos, botimizga @{bot_username} o'tib obuna bo'ling."
-                        ),
-                    )
                 except Exception:
                     pass
 
@@ -425,29 +411,24 @@ async def on_chat_member_joined(
         except Exception as e:
             logger.warning("Could not remove unsubscribed chat_member %d from %d: %s", user.id, chat.id, e)
 
-        dm_sent = False
+        kb = missing_channels_kb(result.missing, chat.id) if result.missing else None
+        try:
+            await bot.send_message(
+                chat_id=chat.id,
+                text=(
+                    f"⛔️ <a href=\"tg://user?id={user.id}\">{escape_html(user.full_name)}</a> guruhdan chiqarildi!\n\n"
+                    f"Guruhda qolish va yozish uchun quyidagi majburiy kanal(lar)ga a'zo bo'ling, so'ngra qayta kiring:"
+                ),
+                reply_markup=kb,
+            )
+        except Exception as e:
+            logger.debug("Could not send group kick alert in %d: %s", chat.id, e)
+
         if result.missing:
             channels_list = "\n".join(f"• {escape_html(ch.title)}" for ch in result.missing)
             text = DECLINE_DM.format(channels=channels_list)
-            kb = missing_channels_kb(result.missing, chat.id)
             try:
                 await bot.send_message(chat_id=user.id, text=text, reply_markup=kb)
-                dm_sent = True
-            except Exception as e:
-                logger.debug("Could not DM chat_member %d: %s", user.id, e)
-
-        if not dm_sent:
-            try:
-                bot_user = await bot.get_me()
-                bot_username = bot_user.username or ""
-                await bot.send_message(
-                    chat_id=chat.id,
-                    text=(
-                        f"⛔️ <a href=\"tg://user?id={user.id}\">{escape_html(user.full_name)}</a>, "
-                        f"guruhda qolish uchun majburiy kanallarga a'zo bo'lishingiz shart!\n"
-                        f"Iltimos, botimizga @{bot_username} o'tib obuna bo'ling."
-                    ),
-                )
             except Exception:
                 pass
 
