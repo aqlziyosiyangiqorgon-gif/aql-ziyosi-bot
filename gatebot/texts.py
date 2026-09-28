@@ -2,9 +2,10 @@
 
 # Exact required strings
 WELCOME_ADMIN = (
-    "👋 Salom! Men guruhlarga a'zolikni nazorat qiluvchi botman.\n\n"
-    "Meni himoyalanishi kerak bo'lgan guruhga va majburiy kanal(lar)ga admin qilib qo'shing, "
-    "keyin /admin orqali sozlang."
+    "👑 <b>Assalomu alaykum, Administrator!</b>\n\n"
+    "AQL ZIYOSI Gatekeeper boshqaruv tizimiga xush kelibsiz.\n\n"
+    "⚙️ Guruhlar, majburiy kanallar, statistika va xabarnomalarni boshqarish uchun quyidagi <b>Admin panel</b> tugmasidan foydalaning.\n"
+    "➕ Botingizni yangi guruh yoki kanallarga tezkor admin qilib biriktirish uchun quyidagi tugmalarni bosing:"
 )
 NOT_ADMIN = "⛔️ Bu buyruq faqat administratorlar uchun."
 DECLINE_DM = (
@@ -54,7 +55,15 @@ ALERT_NON_ADMIN_ATTEMPT = (
     "guruhiga qo'shishga urindi. Bot guruhdan chiqib ketdi."
 )
 
-PUBLIC_GREETING = "👋 Salom! Men guruhlarga a'zolikni tekshiruvchi yordamchi botman."
+PUBLIC_GREETING = (
+    "👋 <b>Assalomu alaykum!</b>\n\n"
+    "Men guruhlarni tozalovchi va a'zolikni nazorat qiluvchi aqlli yordamchi botman.\n\n"
+    "✨ <b>Asosiy imkoniyatlarim:</b>\n"
+    "• 🧹 <b>Kirdi-chiqdilarni tozalash:</b> Guruhdagi <i>«Falonchi qo'shildi»</i> va <i>«Falonchi chiqib ketdi»</i> degan keraksiz xabarlarni avtomatik o'chirib, guruhingizni doimo ozoda saqlayman.\n"
+    "• 🛡 <b>A'zolik nazorati:</b> Guruhga kirish so'rovlarini qabul qilib, spamlardan himoya qilaman.\n\n"
+    "🚀 <b>Mendan foydalanish uchun:</b>\n"
+    "Quyidagi tugma orqali meni guruhingizga qo'shing va <b>Administrator</b> huquqini bering. Men o'sha zahotiyoq guruhni tozalashni boshlayman!"
+)
 ASK_CHANNEL_URL = (
     "🔗 «{title}» kanali uchun foydalanuvchilarga ko'rsatiladigan havola (link) yuboring:\n"
     "Misol: https://t.me/+abcdef yoki @kanal_nomi"
