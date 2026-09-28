@@ -18,21 +18,29 @@ from gatebot.config import Settings
 from gatebot.db.crud import (
     add_or_update_protected_group,
     add_or_update_required_channel,
+    get_active_required_channels,
     get_protected_group_by_chat_id,
     get_required_channel_by_chat_id,
     is_admin,
+    log_join_event,
     set_protected_group_active,
     set_required_channel_active,
     update_protected_group_chat_id,
 )
-from gatebot.keyboards.inline import channel_confirm_kb, group_confirm_kb
+from gatebot.keyboards.inline import (
+    channel_confirm_kb,
+    group_confirm_kb,
+    missing_channels_kb,
+)
 from gatebot.services.notify import (
     notify_bot_removed,
     notify_non_admin_add,
 )
+from gatebot.services.subscription import check_user
 from gatebot.texts import (
     CHANNEL_IGNORED,
     CHANNEL_SAVED,
+    DECLINE_DM,
     GROUP_IGNORED,
     GROUP_SAVED,
     LEFT_NON_ADMIN_ADD,
@@ -86,15 +94,35 @@ async def on_bot_promoted_to_admin(
         )
 
         can_invite = getattr(new_member, "can_invite_users", False)
+        invite_link_str = None
+        if can_invite:
+            try:
+                created_link = await bot.create_chat_invite_link(
+                    chat_id=chat.id,
+                    name="AQL ZIYOSI Himoya",
+                    creates_join_request=True,
+                )
+                invite_link_str = created_link.invite_link
+            except Exception as e:
+                logger.warning("Could not auto-create join request link in chat %d: %s", chat.id, e)
+
         notify_text = (
             f"✅ <b>Guruh avtomatik himoyaga olindi!</b>\n\n"
             f"«<b>{escape_html(chat.title)}</b>» guruhi tizimga muvaffaqiyatli qo'shildi va faollashtirildi.\n\n"
-            f"🛡 Endi guruhga kirish so'rovlari avtomatik tekshirilib, obuna bo'lganlargina qabul qilinadi."
+            f"🛡 <b>2 tomonlama to'liq himoya faol:</b>\n"
+            f"1. So'rovli havola orqali kelganlar kanallarga a'zo bo'lmaguncha qabul qilinmaydi.\n"
+            f"2. Ochiq guruhdan to'g'ridan-to'g'ri kirganlar ham tekshirilib, obunasi bo'lmasa guruhdan avtomatik chiqariladi.\n"
         )
-        if not can_invite:
+        if invite_link_str:
             notify_text += (
-                f"\n\n⚠️ <b>Muhim eslatma:</b> Bot to'liq ishlashi uchun guruh sozlamalarida "
-                f"«Foydalanuvchilarni taklif qilish» (Invite Users) ruxsatini yoqib qo'ying."
+                f"\n🔗 <b>Guruhingiz uchun tayyor so'rovli havola:</b>\n"
+                f"👉 <code>{invite_link_str}</code>\n\n"
+                f"<i>Odamlarni ushbu havola orqali taklif qilsangiz, bot ularni kirmasdan oldin tekshiradi.</i>"
+            )
+        elif not can_invite:
+            notify_text += (
+                f"\n⚠️ <b>Muhim eslatma:</b> Bot to'liq ishlashi va so'rovlarni avtomatik qabul qilishi uchun "
+                f"guruh sozlamalarida «Foydalanuvchilarni taklif qilish» (Invite Users) ruxsatini yoqib qo'ying."
             )
 
         try:
@@ -219,13 +247,15 @@ async def on_group_migration(
     await update_protected_group_chat_id(session, old_chat_id=old_id, new_chat_id=new_id)
 
 
-# 4. Auto-delete service messages (new members joined, left) in protected groups
+# 4. Auto-delete service messages & gatekeep direct joins in protected groups
 @router.message(F.new_chat_members | F.left_chat_member)
 async def on_service_join_leave_message(
     message: Message,
     session: AsyncSession,
+    bot: Bot | None = None,
+    settings: Settings | None = None,
 ) -> None:
-    """Auto-delete 'user joined/left group' service messages in managed groups."""
+    """Auto-delete service messages and gatekeep direct joins in managed groups."""
     group = await get_protected_group_by_chat_id(session, message.chat.id)
     if not group or not group.is_active:
         return
@@ -235,6 +265,99 @@ async def on_service_join_leave_message(
         logger.debug("Deleted join/leave service message in group %d", message.chat.id)
     except Exception as e:
         logger.debug("Could not delete service message in group %d: %s", message.chat.id, e)
+
+    target_bot = bot or getattr(message, "bot", None)
+    new_members = getattr(message, "new_chat_members", None)
+    if not target_bot or not new_members:
+        return
+
+    channels = await get_active_required_channels(session)
+    if not channels:
+        return
+
+    admin_ids = settings.ADMIN_IDS if settings else []
+    cache_ttl = settings.SUB_CACHE_SECONDS if settings else 60
+    for user in new_members:
+        if user.is_bot:
+            continue
+
+        if await is_admin(session, user.id, admin_ids):
+            continue
+
+        result = await check_user(
+            bot=target_bot,
+            user_id=user.id,
+            channels=channels,
+            admin_ids=admin_ids,
+            cache_ttl=cache_ttl,
+        )
+        if not result.ok:
+            missing = result.missing
+            logger.info(
+                "Direct join rejected: user %d (%s) missing %d channels in chat %d",
+                user.id,
+                user.full_name,
+                len(missing),
+                message.chat.id,
+            )
+            # Remove unsubscribed member from group
+            try:
+                await target_bot.ban_chat_member(chat_id=message.chat.id, user_id=user.id)
+                await target_bot.unban_chat_member(chat_id=message.chat.id, user_id=user.id)
+            except Exception as e:
+                logger.warning(
+                    "Could not remove unsubscribed user %d from chat %d: %s",
+                    user.id,
+                    message.chat.id,
+                    e,
+                )
+
+            # Send private message with channels
+            dm_sent = False
+            if missing:
+                channels_list = "\n".join(f"• {escape_html(ch.title)}" for ch in missing)
+                text = DECLINE_DM.format(channels=channels_list)
+                kb = missing_channels_kb(missing, message.chat.id)
+                try:
+                    await target_bot.send_message(chat_id=user.id, text=text, reply_markup=kb)
+                    dm_sent = True
+                except Exception as e:
+                    logger.debug("Could not DM direct join user %d: %s", user.id, e)
+
+            # If DM failed (user hasn't started bot), notify briefly in group
+            if not dm_sent:
+                try:
+                    bot_user = await target_bot.get_me()
+                    bot_username = bot_user.username or ""
+                    await target_bot.send_message(
+                        chat_id=message.chat.id,
+                        text=(
+                            f"⛔️ <a href=\"tg://user?id={user.id}\">{escape_html(user.full_name)}</a>, "
+                            f"guruhda qolish uchun majburiy kanallarga a'zo bo'lishingiz shart!\n"
+                            f"Iltimos, botimizga @{bot_username} o'tib obuna bo'ling."
+                        ),
+                    )
+                except Exception:
+                    pass
+
+            missing_titles = " || ".join([ch.title for ch in missing])
+            await log_join_event(
+                session=session,
+                group_id=group.id,
+                user_id=user.id,
+                user_name=user.full_name,
+                status="declined",
+                missing_channels=missing_titles,
+            )
+        else:
+            await log_join_event(
+                session=session,
+                group_id=group.id,
+                user_id=user.id,
+                user_name=user.full_name,
+                status="approved",
+                missing_channels=None,
+            )
 
 
 # 4. Confirmation callbacks from DM prompts

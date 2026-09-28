@@ -283,3 +283,35 @@ async def test_auto_delete_service_messages(db_session):
 
     await on_service_join_leave_message(msg_unmanaged, db_session)
     msg_unmanaged.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_direct_join_unsubscribed_removed(db_session, test_settings, mock_bot):
+    """Direct join without required subscription is removed from group and logged."""
+    from aiogram.types import ChatMemberLeft
+
+    # Add protected group & required channel
+    await add_or_update_protected_group(db_session, chat_id=-100111, title="Active Group")
+    await add_or_update_required_channel(db_session, chat_id=-100222, title="Required Channel")
+
+    # Mock user as NOT a member of required channel
+    mock_bot.get_chat_member.return_value = ChatMemberLeft(
+        user=User(id=55555, is_bot=False, first_name="Unsubscribed User")
+    )
+    mock_bot_user = AsyncMock()
+    mock_bot_user.username = "test_bot"
+    mock_bot.get_me.return_value = mock_bot_user
+
+    new_user = User(id=55555, is_bot=False, first_name="Unsubscribed User")
+    msg = AsyncMock(spec=Message)
+    msg.chat = Chat(id=-100111, type=ChatType.SUPERGROUP)
+    msg.new_chat_members = [new_user]
+    msg.delete = AsyncMock()
+
+    await on_service_join_leave_message(msg, db_session, bot=mock_bot, settings=test_settings)
+
+    # Verifications
+    msg.delete.assert_called_once()
+    mock_bot.ban_chat_member.assert_called_once_with(chat_id=-100111, user_id=55555)
+    mock_bot.unban_chat_member.assert_called_once_with(chat_id=-100111, user_id=55555)
+
