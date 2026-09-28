@@ -9,13 +9,33 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+import logging
+import os
+
+logger = logging.getLogger(__name__)
+
 _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
+
+
+def ensure_sqlite_dir(database_url: str) -> None:
+    """Ensure parent directory exists for SQLite database URLs."""
+    if "sqlite" in database_url:
+        try:
+            path_part = database_url.split("///")[-1]
+            if "?" in path_part:
+                path_part = path_part.split("?")[0]
+            db_dir = os.path.dirname(path_part)
+            if db_dir:
+                os.makedirs(db_dir, exist_ok=True)
+        except Exception as e:
+            logger.warning("Could not auto-create database directory: %s", e)
 
 
 def init_engine(database_url: str) -> AsyncEngine:
     """Initialize async SQLAlchemy engine and session factory."""
     global _engine, _sessionmaker
+    ensure_sqlite_dir(database_url)
     _engine = create_async_engine(
         database_url,
         echo=False,

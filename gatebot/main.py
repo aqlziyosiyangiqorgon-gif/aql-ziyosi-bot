@@ -54,10 +54,20 @@ def setup_logging(log_level: str = "INFO") -> None:
     root_logger.addHandler(file_handler)
 
 
-def setup_directories() -> None:
+def setup_directories(database_url: str | None = None) -> None:
     """Ensure runtime data and log directories exist."""
     os.makedirs("data", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
+    if database_url and "sqlite" in database_url:
+        try:
+            path_part = database_url.split("///")[-1]
+            if "?" in path_part:
+                path_part = path_part.split("?")[0]
+            db_dir = os.path.dirname(path_part)
+            if db_dir:
+                os.makedirs(db_dir, exist_ok=True)
+        except Exception:
+            pass
 
 
 def create_bot(token: str) -> Bot:
@@ -118,7 +128,7 @@ def register_global_error_handler(
 async def start_bot(settings: Settings, bot: Bot, dp: Dispatcher) -> None:
     """Initialize DB migrations, verify bot token, start scheduler, and start polling."""
     logger.info("Initializing AQL ZIYOSI Join Request Gatekeeper Bot...")
-    setup_directories()
+    setup_directories(settings.DATABASE_URL)
 
     # 1. Migrations are executed at application startup
 
@@ -191,7 +201,11 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    setup_directories()
+    try:
+        _st = load_settings()
+        setup_directories(_st.DATABASE_URL)
+    except Exception:
+        setup_directories()
     try:
         run_upgrade_head()
     except Exception as e:

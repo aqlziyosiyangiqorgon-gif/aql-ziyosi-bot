@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p data logs
+RUN mkdir -p /data data logs && chmod -R 777 /data data logs
 
 CMD ["python", "-m", "gatebot.main"]
+

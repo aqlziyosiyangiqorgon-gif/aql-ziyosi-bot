@@ -17,12 +17,30 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
+import os
+
+
+def ensure_sqlite_dir(database_url: str) -> None:
+    if "sqlite" in database_url:
+        try:
+            path_part = database_url.split("///")[-1]
+            if "?" in path_part:
+                path_part = path_part.split("?")[0]
+            db_dir = os.path.dirname(path_part)
+            if db_dir:
+                os.makedirs(db_dir, exist_ok=True)
+        except Exception:
+            pass
+
+
 def get_url() -> str:
     try:
         settings = load_settings()
-        return settings.DATABASE_URL
+        url = settings.DATABASE_URL
     except Exception:
-        return "sqlite+aiosqlite:///./data/bot.db"
+        url = "sqlite+aiosqlite:///./data/bot.db"
+    ensure_sqlite_dir(url)
+    return url
 
 
 def run_migrations_offline() -> None:
