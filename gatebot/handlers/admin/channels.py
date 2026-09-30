@@ -240,6 +240,12 @@ async def process_manual_channel_input(
             return
 
         url = f"https://t.me/{tg_chat.username}" if tg_chat.username else tg_chat.invite_link
+        if not url:
+            try:
+                invite = await bot.create_chat_invite_link(chat_id=tg_chat.id, name="A'zolik havolasi")
+                url = invite.invite_link
+            except Exception as e:
+                logger.warning("Could not auto-create invite link: %s", e)
         title = tg_chat.title or "Kanal"
 
         try:

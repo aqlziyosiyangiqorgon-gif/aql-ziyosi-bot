@@ -174,6 +174,12 @@ async def on_bot_promoted_to_admin(
         channel_url = None
         if chat.username:
             channel_url = f"https://t.me/{chat.username}"
+        else:
+            try:
+                invite = await bot.create_chat_invite_link(chat_id=chat.id, name="A'zolik havolasi")
+                channel_url = invite.invite_link
+            except Exception as e:
+                logger.warning("Could not auto-generate invite link for channel %d: %s", chat.id, e)
 
         await add_or_update_required_channel(
             session=session,
