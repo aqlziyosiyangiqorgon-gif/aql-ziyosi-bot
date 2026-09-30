@@ -452,6 +452,74 @@ async def on_chat_member_joined(
         )
 
 
+# 6. Group chat messages: check subscription when anyone writes in protected groups
+@router.message(F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}))
+async def on_group_chat_message(
+    message: Message,
+    session: AsyncSession,
+    bot: Bot,
+    settings: Settings,
+) -> None:
+    """Enforce channel subscription for users sending messages in protected groups."""
+    user = message.from_user
+    if not user or user.is_bot:
+        return
+
+    # Check if this group is protected
+    group = await get_protected_group_by_chat_id(session, message.chat.id)
+    if not group or not group.is_active:
+        return
+
+    # Admins can always chat
+    if await is_admin(session, user.id, settings.ADMIN_IDS):
+        return
+
+    # Also check if user is a group admin/creator in Telegram
+    try:
+        member = await bot.get_chat_member(chat_id=message.chat.id, user_id=user.id)
+        if member.status in ("creator", "administrator"):
+            return
+    except Exception:
+        pass
+
+    # Check channel subscriptions
+    channels = await get_active_required_channels(session)
+    if not channels:
+        return
+
+    result = await check_user(
+        bot=bot,
+        user_id=user.id,
+        channels=channels,
+        admin_ids=settings.ADMIN_IDS,
+        cache_ttl=settings.SUB_CACHE_SECONDS,
+    )
+
+    if not result.ok:
+        # Delete the unauthorized message immediately
+        try:
+            await message.delete()
+        except Exception as e:
+            logger.debug("Could not delete unauthorized message %d: %s", message.message_id, e)
+
+        # Notify user with channel button
+        kb = missing_channels_kb(result.missing, message.chat.id) if result.missing else None
+        channels_str = ", ".join(f"@{ch.username}" if ch.username else ch.title for ch in result.missing)
+        try:
+            sent_alert = await bot.send_message(
+                chat_id=message.chat.id,
+                text=(
+                    f"⚠️ <a href=\"tg://user?id={user.id}\">{escape_html(user.full_name)}</a>, "
+                    f"guruhda xabar yozish uchun avval majburiy kanal(lar)imizga a'zo bo'ling!\n\n"
+                    f"📢 <b>Kanal:</b> {escape_html(channels_str)}"
+                ),
+                reply_markup=kb,
+            )
+        except Exception as e:
+            logger.debug("Could not send group message alert: %s", e)
+
+
+
 # 4. Confirmation callbacks from DM prompts
 @router.callback_query(F.data.startswith("group_add:"))
 async def on_group_confirm(
