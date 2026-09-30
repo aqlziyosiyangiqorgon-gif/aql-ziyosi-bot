@@ -339,7 +339,7 @@ async def on_group_chat_message(
 
         # Notify user with channel button
         kb = missing_channels_kb(result.missing, message.chat.id) if result.missing else None
-        channels_str = ", ".join(f"@{ch.username}" if ch.username else ch.title for ch in result.missing)
+        channels_str = ", ".join(ch.title for ch in result.missing)
         try:
             sent_alert = await bot.send_message(
                 chat_id=message.chat.id,
