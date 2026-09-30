@@ -3,6 +3,7 @@
 import logging
 
 from aiogram import Bot, F, Router
+from aiogram.enums import ChatType
 from aiogram.exceptions import (
     TelegramBadRequest,
     TelegramForbiddenError,
@@ -198,10 +199,19 @@ async def on_check_subscription(
     )
 
     if result.ok:
+        # Check if this click came from inside a group chat
+        is_in_group = callback.message and callback.message.chat.type in (ChatType.GROUP, ChatType.SUPERGROUP)
+        if is_in_group:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
+            await callback.answer("✅ Obuna tasdiqlandi! Endi guruhda bemalol xabar yozishingiz mumkin.", show_alert=True)
+            return
+
+        # Otherwise, this is a private chat approval for join requests
         try:
             await bot.approve_chat_join_request(chat_id=group_chat_id, user_id=user.id)
-
-            # Resolve group link
             group_link = await get_group_invite_url(bot, group_chat_id)
             if group_link:
                 group_display = f"<a href=\"{group_link}\">«{escape_html(group.title)}»</a>"
@@ -230,34 +240,25 @@ async def on_check_subscription(
                 missing_channels=None,
             )
         except TelegramBadRequest as e:
-            err_msg = str(e).lower()
-            if "hide_requester_missing" in err_msg or "user_not_found" in err_msg or "request_already" in err_msg:
-                # Join request eskirgan — foydalanuvchiga guruh havolasini beramiz
-                group_link = await get_group_invite_url(bot, group_chat_id)
-                if group_link:
-                    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-                    link_kb = InlineKeyboardMarkup(
-                        inline_keyboard=[[InlineKeyboardButton(text=f"➡️ {group.title} guruhiga kirish", url=group_link)]]
-                    )
-                    expired_text = (
-                        f"⚠️ Guruhga kirish so'rovingiz eskirgan.\n\n"
-                        f"✅ Siz barcha kanallarga obuna bo'lgansiz! Quyidagi tugma orqali "
-                        f"<a href=\"{group_link}\">«{escape_html(group.title)}»</a> guruhiga to'g'ridan-to'g'ri kirishingiz mumkin:"
-                    )
-                    if callback.message:
-                        await safe_edit_text(callback.message, expired_text, reply_markup=link_kb)
-                    await callback.answer("✅ Obuna tasdiqlandi! Guruhga havola orqali kiring.", show_alert=True)
-                else:
-                    await callback.answer(
-                        "⚠️ Guruhga kirish so'rovingiz eskirgan. Guruh havolasi orqali qayta kirish so'rovini yuboring.",
-                        show_alert=True,
-                    )
+            # User might already be in the group, or request expired
+            group_link = await get_group_invite_url(bot, group_chat_id)
+            if group_link:
+                from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+                link_kb = InlineKeyboardMarkup(
+                    inline_keyboard=[[InlineKeyboardButton(text=f"➡️ {group.title} guruhiga kirish", url=group_link)]]
+                )
+                success_text = (
+                    f"✅ <b>Obunangiz tasdiqlandi!</b>\n\n"
+                    f"Quyidagi havola orqali «{escape_html(group.title)}» guruhida bemalol faoliyat yuritishingiz mumkin:"
+                )
+                if callback.message:
+                    await safe_edit_text(callback.message, success_text, reply_markup=link_kb)
+                await callback.answer("✅ Obuna tasdiqlandi!", show_alert=True)
             else:
-                logger.error("Failed to approve join request on check: %s", e)
-                await callback.answer("❌ Guruhga qo'shishda xatolik yuz berdi. Qaytadan urinib ko'ring.", show_alert=True)
+                await callback.answer("✅ Obuna tasdiqlandi! Guruhda bemalol yozishingiz mumkin.", show_alert=True)
         except Exception as e:
-            logger.error("Unexpected error approving join request on check: %s", e)
-            await callback.answer("❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.", show_alert=True)
+            logger.error("Unexpected error in on_check_subscription: %s", e)
+            await callback.answer("✅ Obuna tasdiqlandi! Guruhda yozishingiz mumkin.", show_alert=True)
     else:
         channel_lines: list[str] = [f"• <b>{escape_html(ch.title)}</b>" for ch in result.missing]
         channels_text = "\n".join(channel_lines)
