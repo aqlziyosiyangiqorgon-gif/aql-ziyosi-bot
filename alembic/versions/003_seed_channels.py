@@ -27,7 +27,7 @@ def upgrade() -> None:
         {
             "chat_id": -1004375773849,
             "title": "Aql ziyosi",
-            "url": "https://t.me/qorgonyangi",
+            "url": "https://t.me/+op9adoZIwjkzMTVi",
             "is_active": True,
             "sort_order": 1,
             "added_at": now,
