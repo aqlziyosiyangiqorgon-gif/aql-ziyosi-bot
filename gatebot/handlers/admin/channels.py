@@ -105,34 +105,34 @@ async def move_channel_down(callback: CallbackQuery, callback_data: ChannelCb, s
 
 
 @router.callback_query(ChannelCb.filter(F.action == "url"))
-async def edit_channel_url(callback: CallbackQuery, callback_data: ChannelCb, state: FSMContext, session: AsyncSession) -> None:
+async def edit_channel_url(callback: CallbackQuery, callback_data: ChannelCb, bot: Bot, session: AsyncSession) -> None:
     channel = await get_required_channel_by_id(session, callback_data.channel_id)
     if not channel:
         await callback.answer("Kanal topilmadi", show_alert=True)
         return
 
-    await state.update_data(channel_chat_id=channel.chat_id, channel_title=channel.title)
-    await state.set_state(ChannelStates.waiting_for_url)
-    if callback.message:
-        await safe_edit_text(callback.message, ASK_CHANNEL_URL.format(title=escape_html(channel.title)))
-    await callback.answer()
+    new_link = None
+    try:
+        tg_chat = await bot.get_chat(channel.chat_id)
+        if tg_chat.username:
+            new_link = f"https://t.me/{tg_chat.username}"
+        else:
+            created = await bot.create_chat_invite_link(
+                chat_id=channel.chat_id,
+                name="A'zolik havolasi",
+            )
+            new_link = created.invite_link
+    except Exception as e:
+        logger.warning("Could not auto-generate channel invite link for %d: %s", channel.chat_id, e)
 
+    if new_link:
+        await set_required_channel_url(session, channel.chat_id, new_link)
+        channel.url = new_link
+        await callback.answer("✅ Yangi ishlaydigan havola olindi va saqlandi!", show_alert=True)
+        await view_channel(callback, callback_data, session)
+    else:
+        await callback.answer("❌ Havolani avtomatik olib bo'lmadi. Bot kanalda admin ekanligini tekshiring.", show_alert=True)
 
-@router.message(ChannelStates.waiting_for_url)
-async def process_channel_url_input(
-    message: Message, state: FSMContext, session: AsyncSession
-) -> None:
-    url = (message.text or "").strip()
-    if not (url.startswith("https://") or url.startswith("http://") or url.startswith("@")):
-        await message.answer("⚠️ Havola https:// yoki @ bilan boshlanishi kerak. Qaytadan kiriting:")
-        return
-    data = await state.get_data()
-    chat_id = data["channel_chat_id"]
-    title = data["channel_title"]
-
-    await set_required_channel_url(session, chat_id, url)
-    await state.clear()
-    await message.answer(CHANNEL_URL_SAVED.format(title=escape_html(title), url=url))
 
 
 @router.callback_query(ChannelCb.filter(F.action == "del"))
