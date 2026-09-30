@@ -113,23 +113,31 @@ async def edit_channel_url(callback: CallbackQuery, callback_data: ChannelCb, bo
 
     new_link = None
     try:
-        tg_chat = await bot.get_chat(channel.chat_id)
-        if tg_chat.username:
-            new_link = f"https://t.me/{tg_chat.username}"
-        else:
-            created = await bot.create_chat_invite_link(
-                chat_id=channel.chat_id,
-                name="A'zolik havolasi",
-            )
-            new_link = created.invite_link
+        created = await bot.create_chat_invite_link(
+            chat_id=channel.chat_id,
+            name="A'zolik havolasi",
+        )
+        new_link = created.invite_link
     except Exception as e:
         logger.warning("Could not auto-generate channel invite link for %d: %s", channel.chat_id, e)
+        try:
+            tg_chat = await bot.get_chat(channel.chat_id)
+            if tg_chat.username:
+                new_link = f"https://t.me/{tg_chat.username}"
+        except Exception:
+            pass
 
     if new_link:
         await set_required_channel_url(session, channel.chat_id, new_link)
         channel.url = new_link
-        await callback.answer("✅ Yangi ishlaydigan havola olindi va saqlandi!", show_alert=True)
+        await callback.answer("✅ Yangi havola tayyor!", show_alert=False)
         await view_channel(callback, callback_data, session)
+        if callback.message:
+            await callback.message.answer(
+                f"🔗 «<b>{escape_html(channel.title)}</b>» kanali uchun ishlaydigan havola:\n\n"
+                f"👉 <code>{new_link}</code>\n\n"
+                f"<i>(Ustiga bossangiz, havola avtomatik nusxalanadi)</i>"
+            )
     else:
         await callback.answer("❌ Havolani avtomatik olib bo'lmadi. Bot kanalda admin ekanligini tekshiring.", show_alert=True)
 
