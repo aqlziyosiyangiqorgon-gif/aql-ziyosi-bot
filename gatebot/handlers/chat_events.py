@@ -345,7 +345,7 @@ async def on_group_chat_message(
                 chat_id=message.chat.id,
                 text=(
                     f"⚠️ <a href=\"tg://user?id={user.id}\">{escape_html(user.full_name)}</a>, "
-                    f"guruhda xabar yozish uchun avval majburiy kanal(lar)imizga a'zo bo'ling!\n\n"
+                    f"guruhda xabar yozish uchun avval kanalimizga a'zo bo'ling!\n\n"
                     f"📢 <b>Kanal:</b> {escape_html(channels_str)}"
                 ),
                 reply_markup=kb,
