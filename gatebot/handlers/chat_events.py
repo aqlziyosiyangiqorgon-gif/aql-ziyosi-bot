@@ -269,96 +269,12 @@ async def on_service_join_leave_message(
     except Exception as e:
         logger.debug("Could not delete service message in group %d: %s", message.chat.id, e)
 
-    target_bot = bot or getattr(message, "bot", None)
-    new_members = getattr(message, "new_chat_members", None)
-    if not target_bot or not new_members:
-        return
-
-    channels = await get_active_required_channels(session)
-    if not channels:
-        return
-
-    admin_ids = settings.ADMIN_IDS if settings else []
-    cache_ttl = settings.SUB_CACHE_SECONDS if settings else 60
-    for user in new_members:
-        if user.is_bot:
-            continue
-
-        if await is_admin(session, user.id, admin_ids):
-            continue
-
-        result = await check_user(
-            bot=target_bot,
-            user_id=user.id,
-            channels=channels,
-            admin_ids=admin_ids,
-            cache_ttl=cache_ttl,
-        )
-        if not result.ok:
-            missing = result.missing
-            logger.info(
-                "Direct join rejected: user %d (%s) missing %d channels in chat %d",
-                user.id,
-                user.full_name,
-                len(missing),
-                message.chat.id,
-            )
-            # Remove unsubscribed member from group
-            try:
-                await target_bot.ban_chat_member(chat_id=message.chat.id, user_id=user.id)
-                await target_bot.unban_chat_member(chat_id=message.chat.id, user_id=user.id)
-            except Exception as e:
-                logger.warning(
-                    "Could not remove unsubscribed user %d from chat %d: %s",
-                    user.id,
-                    message.chat.id,
-                    e,
-                )
-
-            # Send clear alert directly in the group with channel buttons
-            kb = missing_channels_kb(missing, message.chat.id) if missing else None
-            try:
-                await target_bot.send_message(
-                    chat_id=message.chat.id,
-                    text=(
-                        f"⛔️ <a href=\"tg://user?id={user.id}\">{escape_html(user.full_name)}</a> guruhdan chiqarildi!\n\n"
-                        f"Guruhda qolish va yozish uchun quyidagi majburiy kanal(lar)ga a'zo bo'ling, so'ngra qayta kiring:"
-                    ),
-                    reply_markup=kb,
-                )
-            except Exception as e:
-                logger.debug("Could not send group kick alert in %d: %s", message.chat.id, e)
-
-            # Also attempt DM to user
-            if missing:
-                channels_list = "\n".join(f"• {escape_html(ch.title)}" for ch in missing)
-                text = DECLINE_DM.format(channels=channels_list)
-                try:
-                    await target_bot.send_message(chat_id=user.id, text=text, reply_markup=kb)
-                except Exception:
-                    pass
-
-            missing_titles = " || ".join([ch.title for ch in missing])
-            await log_join_event(
-                session=session,
-                group_id=group.id,
-                user_id=user.id,
-                user_name=user.full_name,
-                status="declined",
-                missing_channels=missing_titles,
-            )
-        else:
-            await log_join_event(
-                session=session,
-                group_id=group.id,
-                user_id=user.id,
-                user_name=user.full_name,
-                status="approved",
-                missing_channels=None,
-            )
+    # Only delete service messages («Falonchi qo'shildi», «Falonchi chiqdi»)
+    # Do NOT kick user out upon joining. They stay in the group and are checked when they write messages!
+    return
 
 
-# 5. Capture new members via ChatMemberUpdated (handles supergroups with hidden join messages)
+# 5. Capture new members via ChatMemberUpdated: do nothing (users stay in group peacefully)
 @router.chat_member(
     ChatMemberUpdatedFilter(
         member_status_changed=(IS_NOT_MEMBER | LEFT | KICKED) >> (MEMBER | RESTRICTED)
@@ -366,90 +282,9 @@ async def on_service_join_leave_message(
 )
 async def on_chat_member_joined(
     event: ChatMemberUpdated,
-    session: AsyncSession,
-    bot: Bot,
-    settings: Settings,
 ) -> None:
-    """Verify subscription for members joining supergroups directly."""
-    chat = event.chat
-    if chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
-        return
-
-    group = await get_protected_group_by_chat_id(session, chat.id)
-    if not group or not group.is_active:
-        return
-
-    user = event.new_chat_member.user
-    if user.is_bot:
-        return
-
-    if await is_admin(session, user.id, settings.ADMIN_IDS):
-        return
-
-    channels = await get_active_required_channels(session)
-    if not channels:
-        return
-
-    result = await check_user(
-        bot=bot,
-        user_id=user.id,
-        channels=channels,
-        admin_ids=settings.ADMIN_IDS,
-        cache_ttl=settings.SUB_CACHE_SECONDS,
-    )
-    if not result.ok:
-        logger.info(
-            "Direct chat_member join rejected: user %d (%s) missing %d channels in chat %d",
-            user.id,
-            user.full_name,
-            len(result.missing),
-            chat.id,
-        )
-        try:
-            await bot.ban_chat_member(chat_id=chat.id, user_id=user.id)
-            await bot.unban_chat_member(chat_id=chat.id, user_id=user.id)
-        except Exception as e:
-            logger.warning("Could not remove unsubscribed chat_member %d from %d: %s", user.id, chat.id, e)
-
-        kb = missing_channels_kb(result.missing, chat.id) if result.missing else None
-        try:
-            await bot.send_message(
-                chat_id=chat.id,
-                text=(
-                    f"⛔️ <a href=\"tg://user?id={user.id}\">{escape_html(user.full_name)}</a> guruhdan chiqarildi!\n\n"
-                    f"Guruhda qolish va yozish uchun quyidagi majburiy kanal(lar)ga a'zo bo'ling, so'ngra qayta kiring:"
-                ),
-                reply_markup=kb,
-            )
-        except Exception as e:
-            logger.debug("Could not send group kick alert in %d: %s", chat.id, e)
-
-        if result.missing:
-            channels_list = "\n".join(f"• {escape_html(ch.title)}" for ch in result.missing)
-            text = DECLINE_DM.format(channels=channels_list)
-            try:
-                await bot.send_message(chat_id=user.id, text=text, reply_markup=kb)
-            except Exception:
-                pass
-
-        missing_titles = " || ".join([ch.title for ch in result.missing])
-        await log_join_event(
-            session=session,
-            group_id=group.id,
-            user_id=user.id,
-            user_name=user.full_name,
-            status="declined",
-            missing_channels=missing_titles,
-        )
-    else:
-        await log_join_event(
-            session=session,
-            group_id=group.id,
-            user_id=user.id,
-            user_name=user.full_name,
-            status="approved",
-            missing_channels=None,
-        )
+    """Allow user to join group naturally without kicking them out."""
+    return
 
 
 # 6. Group chat messages: check subscription when anyone writes in protected groups
